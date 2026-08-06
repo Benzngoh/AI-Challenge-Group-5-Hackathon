@@ -1,0 +1,1389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StudySync AI — Student Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+    * { font-family: 'Inter', sans-serif; }
+    .scrollbar-thin::-webkit-scrollbar { width: 4px; }
+    .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+    .chat-bubble-ai { background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); }
+    .chat-bubble-user { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); }
+    .pulse-dot { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .card-hover { transition: transform 0.2s, box-shadow 0.2s; }
+    .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); }
+    .quiz-option { transition: all 0.15s; }
+    .quiz-option:hover:not(.selected):not(.submitted) { background: #f1f5f9; border-color: #6366f1; }
+    ::selection { background: #fde047; }
+    .sidebar-item { transition: all 0.15s; }
+    .sidebar-item:hover { background: rgba(99,102,241,0.08); }
+    .sidebar-item.active { background: rgba(99,102,241,0.12); color: #4f46e5; }
+    .highlight-section { animation: highlightPulse 2s ease-in-out; }
+    @keyframes highlightPulse { 0% { background: #fef08a; } 100% { background: transparent; } }
+    .pdf-viewer-modal { backdrop-filter: blur(8px); }
+  </style>
+</head>
+<body class="bg-slate-50">
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MOCK DATA
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const STUDENT = { name: "Alex Chen", major: "Computer Engineering", term: "Year 2, Semester 1 · AY2025/26", avatar: "AC", gpa: "3.6", enrolled: 4 };
+
+const MODULES = {
+  "CG1111A": {
+    code: "CG1111A", name: "Engineering Principles & Practice", credits: 4, color: "violet",
+    instructor: "Prof. Smith", semester: "Sem 1 AY2025/26",
+    pdfFile: "CG1111A_Lecture_Notes.pdf",
+    chapters: [
+      { id: "ch1", num: 1, title: "Boolean Algebra & Logic Gates", pdfPage: 1 },
+      { id: "ch2", num: 2, title: "Combinational Logic Design", pdfPage: 12 },
+      { id: "ch3", num: 3, title: "State Machines", pdfPage: 28 },
+      { id: "ch4", num: 4, title: "Timing & Sequential Circuits", pdfPage: 45 },
+      { id: "ch5", num: 5, title: "Memory & Storage Elements", pdfPage: 62 },
+    ],
+    lectureNotes: {
+      "ch1": [
+        { heading: "Boolean Algebra Fundamentals", content: "Boolean algebra is a branch of algebra where variables can only take values of 0 or 1 (false or true). The basic operations are AND (conjunction), OR (disjunction), and NOT (negation). These operations follow specific laws including commutativity, associativity, distributivity, and De Morgan's theorems." },
+        { heading: "Logic Gates", content: "Logic gates are the physical implementation of Boolean operations in digital circuits. The primary gates are AND, OR, NOT, NAND, NOR, XOR, and XNOR. NAND and NOR are considered universal gates because any Boolean function can be implemented using only NAND gates or only NOR gates." },
+      ],
+      "ch2": [
+        { heading: "Karnaugh Maps", content: "A Karnaugh map (K-map) is a visual method for simplifying Boolean expressions. Variables are arranged in Gray code order along the edges, and cells are grouped in powers of two to identify prime implicants. K-maps work well for functions up to 6 variables." },
+        { heading: "Multiplexers and Decoders", content: "A multiplexer (MUX) selects one of several input signals and forwards it to a single output line. A decoder converts binary information from n input lines to a maximum of 2^n unique output lines. Both are fundamental building blocks in combinational design." },
+      ],
+      "ch3": [
+        { heading: "What is a Finite State Machine?", content: "A Finite State Machine (FSM) is a computational model consisting of a finite number of states, transitions between those states, and actions. An FSM can only be in one state at a time — referred to as the current state. It transitions from the current state to another upon some input event." },
+        { heading: "Moore vs Mealy Machines", content: "In a Moore machine, outputs depend only on the current state. In a Mealy machine, outputs depend on both the current state and the current input. Mealy machines typically require fewer states than equivalent Moore machines, but Moore machines are generally easier to design and analyse." },
+        { heading: "State Transition Diagrams", content: "A state transition diagram is a directed graph where nodes represent states and edges represent transitions. Each edge is labelled with the input condition that triggers the transition. The initial state is indicated by an arrow with no source node, and accepting states are shown with double circles." },
+        { heading: "Next-State Logic and Output Logic", content: "The next-state logic is a combinational circuit that determines the next state from the current state and current inputs. Output logic produces the FSM outputs. In synchronous FSMs, state registers are updated on clock edges, ensuring predictable timing behaviour." },
+      ],
+      "ch4": [
+        { heading: "Clock Signals and Timing", content: "A clock signal is a periodic waveform that synchronises the operations of a digital system. The clock period is the time between successive rising edges. Setup time is the minimum time data must be stable before the clock edge, and hold time is the minimum time data must remain stable after the clock edge." },
+        { heading: "Flip-Flops", content: "A flip-flop is a bistable circuit that stores one bit of information. The D flip-flop captures the value of the D input at the clock edge and holds it until the next clock edge. SR, JK, and T flip-flops are other common types with different input behaviours." },
+      ],
+      "ch5": [
+        { heading: "RAM and ROM", content: "Random Access Memory (RAM) allows reading and writing at any location in constant time. Static RAM (SRAM) uses flip-flops and is faster but more expensive; Dynamic RAM (DRAM) uses capacitors and is denser but requires periodic refresh cycles." },
+        { heading: "Register Files", content: "A register file is a small, fast memory structure within a processor containing a fixed number of registers. It typically has multiple read ports and one or two write ports, allowing simultaneous access to different registers in a single clock cycle." },
+      ],
+    },
+
+    tutorials: [
+      { id: "t1", title: "Tutorial 1: Boolean Simplification", chapter: "ch1", questions: 8, completed: true, pdfFile: "CG1111A_Tutorial_1.pdf" },
+      { id: "t2", title: "Tutorial 2: K-Map Practice", chapter: "ch2", questions: 6, completed: true, pdfFile: "CG1111A_Tutorial_2.pdf" },
+      { id: "t3", title: "Tutorial 3: FSM Design Problems", chapter: "ch3", questions: 5, completed: true, pdfFile: "CG1111A_Tutorial_3.pdf" },
+      { id: "t4", title: "Tutorial 4: Timing Analysis", chapter: "ch4", questions: 7, completed: false, pdfFile: "CG1111A_Tutorial_4.pdf" },
+      { id: "t5", title: "Tutorial 5: Memory Design", chapter: "ch5", questions: 6, completed: false, pdfFile: "CG1111A_Tutorial_5.pdf" },
+    ],
+    pastTests: [
+      {
+        id: "midterm1", title: "Midterm Exam", date: "2026-07-15", totalScore: 62, maxScore: 100, duration: "90 min",
+        questions: [
+          { num: 1, chapter: "ch1", topic: "Boolean Algebra", questionText: "Simplify the expression: F = A'B + AB' + AB using Boolean algebra laws.", maxMarks: 10, scored: 9, correct: true, studentAnswer: "F = A + B", correctAnswer: "F = A + B" },
+          { num: 2, chapter: "ch1", topic: "De Morgan's Theorem", questionText: "Apply De Morgan's theorem to simplify: (A + B)' · (C + D)'", maxMarks: 10, scored: 8, correct: true, studentAnswer: "A'B' · C'D'", correctAnswer: "A'B' · C'D'" },
+          { num: 3, chapter: "ch2", topic: "K-Map Simplification", questionText: "Use a 4-variable K-map to simplify: F(A,B,C,D) = Σm(0,1,2,5,8,9,10)", maxMarks: 15, scored: 12, correct: true, studentAnswer: "F = B'D' + A'B'C'", correctAnswer: "F = B'D' + A'B'C'" },
+          { num: 4, chapter: "ch2", topic: "Multiplexer Design", questionText: "Design a 4-to-1 multiplexer using basic logic gates. Show how to implement F(A,B,C) = Σm(1,3,5,7) using a 4:1 MUX with A,B as select lines.", maxMarks: 10, scored: 7, correct: false, studentAnswer: "Connected C to all data inputs D0-D3, used A,B as select — output always equals C regardless of select", correctAnswer: "D0=C, D1=C, D2=C, D3=C with A,B select lines; OR simply tie all data inputs to C since F=C for all combinations of A,B" },
+          { num: 5, chapter: "ch3", topic: "FSM State Diagrams", questionText: "Design a Moore FSM that detects the sequence '110' in a serial bit stream. Show the state diagram with proper state encoding.", maxMarks: 15, scored: 5, correct: false, studentAnswer: "Drew 2 states (S0, S1) with transitions only for '1' input. Missing reset state and '0' detection path. Output assigned incorrectly to transitions instead of states.", correctAnswer: "4 states needed: S0(idle/reset), S1(seen '1'), S2(seen '11'), S3(seen '110' — output=1). Each state has transitions for both input=0 and input=1. Output is associated with states (Moore), not transitions." },
+          { num: 6, chapter: "ch3", topic: "Moore vs Mealy", questionText: "Convert the following Mealy machine to an equivalent Moore machine. Explain why the Moore version may require more states.", maxMarks: 15, scored: 6, correct: false, studentAnswer: "Attempted direct copy of Mealy states with outputs moved to states. Did not split states where a single Mealy state has different outputs for different inputs. Result has incorrect output timing.", correctAnswer: "Split any Mealy state that produces different outputs depending on the input into multiple Moore states (one per unique output). The Moore machine needs more states because each state encodes a unique output, while Mealy allows output to vary per transition." },
+          { num: 7, chapter: "ch3", topic: "Next-State Tables", questionText: "Given the state diagram, derive the complete next-state table and output table. Then determine the flip-flop input equations for D flip-flops.", maxMarks: 10, scored: 4, correct: false, studentAnswer: "Next-state table partially correct but missed 2 state transitions. Did not derive D flip-flop equations at all. Only listed current state and next state columns.", correctAnswer: "Complete next-state table must list all current-state/input combinations. For D flip-flops: D = next state for each bit. Derive Boolean expressions for each D input from the next-state table using K-maps or algebraic simplification." },
+          { num: 8, chapter: "ch4", topic: "Setup & Hold Time", questionText: "A D flip-flop has setup time = 2ns, hold time = 1ns, and propagation delay = 5ns. What is the maximum clock frequency for a system with combinational delay of 8ns?", maxMarks: 15, scored: 11, correct: true, studentAnswer: "T_min = t_prop + t_comb + t_setup = 5 + 8 + 2 = 15ns → f_max = 66.7 MHz", correctAnswer: "T_min = t_prop + t_comb + t_setup = 5 + 8 + 2 = 15ns → f_max = 1/15ns ≈ 66.7 MHz" },
+        ],
+      },
+      {
+        id: "quiz1", title: "Pop Quiz 1 (Weeks 1–2)", date: "2026-06-20", totalScore: 18, maxScore: 20, duration: "20 min",
+        questions: [
+          { num: 1, chapter: "ch1", topic: "AND/OR/NOT Gates", questionText: "What is the output of a 3-input AND gate when inputs are A=1, B=1, C=0?", maxMarks: 5, scored: 5, correct: true, studentAnswer: "0", correctAnswer: "0" },
+          { num: 2, chapter: "ch1", topic: "Boolean Laws", questionText: "State and prove the Absorption Law: A + AB = ?", maxMarks: 5, scored: 4, correct: true, studentAnswer: "A + AB = A(1+B) = A·1 = A", correctAnswer: "A + AB = A(1+B) = A" },
+          { num: 3, chapter: "ch2", topic: "2-to-1 MUX", questionText: "Write the Boolean expression for a 2:1 MUX output Y in terms of inputs I0, I1, and select line S.", maxMarks: 5, scored: 5, correct: true, studentAnswer: "Y = S'·I0 + S·I1", correctAnswer: "Y = S'·I0 + S·I1" },
+          { num: 4, chapter: "ch2", topic: "Sum of Products", questionText: "Express F = (A+B)(A+C) in Sum of Products (SOP) form.", maxMarks: 5, scored: 4, correct: true, studentAnswer: "F = A + BC", correctAnswer: "F = A + BC" },
+        ],
+      },
+    ],
+  },
+
+  "CS2106": {
+    code: "CS2106", name: "Introduction to Operating Systems", credits: 4, color: "blue",
+    instructor: "Dr. Lee Wei Lin", semester: "Sem 1 AY2025/26",
+    pdfFile: "CS2106_Lecture_Notes.pdf",
+    chapters: [
+      { id: "ch1", num: 1, title: "OS Overview & Processes", pdfPage: 1 },
+      { id: "ch2", num: 2, title: "Process Scheduling", pdfPage: 15 },
+      { id: "ch3", num: 3, title: "Inter-Process Communication", pdfPage: 30 },
+      { id: "ch4", num: 4, title: "Threads & Concurrency", pdfPage: 48 },
+      { id: "ch5", num: 5, title: "Memory Management", pdfPage: 65 },
+      { id: "ch6", num: 6, title: "Virtual Memory", pdfPage: 80 },
+      { id: "ch7", num: 7, title: "Process Synchronisation", pdfPage: 95 },
+    ],
+    lectureNotes: {
+      "ch1": [
+        { heading: "What is an Operating System?", content: "An operating system is system software that manages hardware resources and provides services for application programs. It acts as an intermediary between users and hardware, handling process management, memory allocation, file systems, and I/O operations." },
+      ],
+      "ch7": [
+        { heading: "Critical Section Problem", content: "The critical section problem involves ensuring that when one process is executing in its critical section, no other process can enter its own critical section. Solutions must satisfy mutual exclusion, progress, and bounded waiting." },
+        { heading: "Semaphores", content: "A semaphore is a synchronisation tool that uses an integer variable accessed through two atomic operations: wait (P) and signal (V). Binary semaphores can take values 0 or 1, while counting semaphores can have any non-negative value." },
+        { heading: "Deadlock", content: "Deadlock occurs when a set of processes are each waiting for a resource held by another process in the set. The four necessary conditions are: mutual exclusion, hold-and-wait, no preemption, and circular wait." },
+      ],
+    },
+    tutorials: [
+      { id: "t1", title: "Tutorial 1: Process Lifecycle", chapter: "ch1", questions: 5, completed: true, pdfFile: "CS2106_Tutorial_1.pdf" },
+      { id: "t2", title: "Tutorial 2: Scheduling Algorithms", chapter: "ch2", questions: 6, completed: true, pdfFile: "CS2106_Tutorial_2.pdf" },
+      { id: "t3", title: "Tutorial 3: IPC Mechanisms", chapter: "ch3", questions: 5, completed: true, pdfFile: "CS2106_Tutorial_3.pdf" },
+      { id: "t4", title: "Tutorial 4: Mutex & Semaphores", chapter: "ch7", questions: 8, completed: true, pdfFile: "CS2106_Tutorial_4.pdf" },
+    ],
+    pastTests: [
+      {
+        id: "midterm1", title: "Midterm Exam", date: "2026-07-18", totalScore: 55, maxScore: 100, duration: "90 min",
+        questions: [
+          { num: 1, chapter: "ch1", topic: "Process States", questionText: "Draw and label the 5-state process model. Explain what triggers each transition.", maxMarks: 10, scored: 9, correct: true, studentAnswer: "New → Ready → Running → Terminated, with Ready ↔ Blocked transitions. Correct triggers for all.", correctAnswer: "New → Ready (admitted), Ready → Running (scheduler dispatch), Running → Ready (interrupt/preempt), Running → Blocked (I/O wait), Blocked → Ready (I/O complete), Running → Terminated (exit)." },
+          { num: 2, chapter: "ch2", topic: "Round-Robin Scheduling", questionText: "Given processes P1(burst=8), P2(burst=4), P3(burst=6) with quantum=3, calculate average waiting time.", maxMarks: 15, scored: 13, correct: true, studentAnswer: "Gantt: P1(0-3), P2(3-6), P3(6-9), P1(9-12), P2(12-13), P3(13-16), P1(16-18). Avg wait = (10+9+10)/3 = 9.67ms", correctAnswer: "Average waiting time = (10+9+10)/3 ≈ 9.67ms" },
+          { num: 3, chapter: "ch3", topic: "Pipes & Signals", questionText: "Explain the difference between named and unnamed pipes. When would you use each?", maxMarks: 15, scored: 10, correct: false, studentAnswer: "Unnamed pipes use pipe() syscall for parent-child only. Named pipes... (left incomplete — did not explain FIFO creation, persistence, or unrelated process communication)", correctAnswer: "Unnamed pipes: created with pipe(), exist only in memory, require parent-child relationship (inherited file descriptors). Named pipes (FIFOs): created with mkfifo(), persist in filesystem, allow communication between unrelated processes. Use unnamed for simple parent-child; named when processes have no ancestry relationship." },
+          { num: 4, chapter: "ch4", topic: "Thread Models", questionText: "Compare user-level threads vs kernel-level threads. Give one advantage of each.", maxMarks: 10, scored: 8, correct: true, studentAnswer: "ULT: fast context switch (no kernel involvement). KLT: can utilise multiple CPUs and doesn't block entire process on I/O.", correctAnswer: "User-level: faster switching (no mode switch needed). Kernel-level: true parallelism on multiprocessors, one thread blocking doesn't block others." },
+          { num: 5, chapter: "ch7", topic: "Race Conditions", questionText: "Given shared variable count=5 and two threads executing count++ simultaneously, show all possible final values and explain why.", maxMarks: 20, scored: 6, correct: false, studentAnswer: "Final value is always 7 because both threads increment. (Did not show assembly-level interleaving or explain the lost update scenario)", correctAnswer: "count++ is NOT atomic: it involves LOAD, INCREMENT, STORE. Possible final values: 6 (lost update if interleaved: T1 loads 5, T2 loads 5, T1 stores 6, T2 stores 6) or 7 (sequential execution). The race condition means the result depends on scheduling order." },
+          { num: 6, chapter: "ch7", topic: "Deadlock Conditions", questionText: "A system has 3 processes and 2 resource types. Show whether deadlock exists using a Resource Allocation Graph. If yes, identify the cycle.", maxMarks: 15, scored: 4, correct: false, studentAnswer: "Drew graph but confused request edges and assignment edges (arrows reversed). Claimed no deadlock exists despite visible cycle P1→R1→P2→R2→P3→R1.", correctAnswer: "Deadlock exists. Cycle: P1 holds R2, requests R1; P2 holds R1, requests R2. In the RAG, assignment edges go from resource to process, request edges from process to resource. A cycle with single-instance resources confirms deadlock." },
+          { num: 7, chapter: "ch7", topic: "Semaphore Implementation", questionText: "Using semaphores, solve the producer-consumer problem with a bounded buffer of size N. Show initialisation and pseudocode.", maxMarks: 15, scored: 5, correct: false, studentAnswer: "Used single mutex only. Missing empty/full counting semaphores. Producer and consumer both just lock/unlock mutex without tracking buffer space.", correctAnswer: "Semaphores: mutex=1, empty=N, full=0. Producer: wait(empty), wait(mutex), produce, signal(mutex), signal(full). Consumer: wait(full), wait(mutex), consume, signal(mutex), signal(empty). The counting semaphores track available slots and items." },
+        ],
+      },
+    ],
+  },
+
+  "MA1508E": {
+    code: "MA1508E", name: "Linear Algebra for Engineering", credits: 4, color: "emerald",
+    instructor: "Prof. Tan Ah Kow", semester: "Sem 1 AY2025/26",
+    pdfFile: "MA1508E_Lecture_Notes.pdf",
+    chapters: [
+      { id: "ch1", num: 1, title: "Systems of Linear Equations", pdfPage: 1 },
+      { id: "ch2", num: 2, title: "Matrix Operations", pdfPage: 18 },
+      { id: "ch3", num: 3, title: "Determinants", pdfPage: 35 },
+      { id: "ch4", num: 4, title: "Vector Spaces", pdfPage: 52 },
+      { id: "ch5", num: 5, title: "Vector Math & Dot Products", pdfPage: 70 },
+      { id: "ch6", num: 6, title: "Eigenvalues & Eigenvectors", pdfPage: 88 },
+    ],
+    lectureNotes: {
+      "ch5": [
+        { heading: "Vectors in R^n", content: "A vector in R^n is an ordered n-tuple of real numbers. Vectors can be added component-wise and scaled by real numbers. The set of all vectors in R^n with these operations forms a vector space." },
+        { heading: "Dot Product", content: "The dot product (inner product) of two vectors a and b is defined as a·b = Σ(a_i × b_i). Geometrically, a·b = |a||b|cos(θ) where θ is the angle between the vectors. Two vectors are orthogonal if and only if their dot product is zero." },
+        { heading: "Cross Product", content: "The cross product a×b produces a vector perpendicular to both a and b, with magnitude |a||b|sin(θ). It is only defined in 3D space and is anti-commutative: a×b = -(b×a). The direction follows the right-hand rule." },
+        { heading: "Applications in Engineering", content: "Dot products are used to find projections, compute work done by forces, and determine orthogonality. Cross products help find torque, surface normals, and area of parallelograms. These operations are fundamental in physics and computer graphics." },
+      ],
+    },
+    tutorials: [
+      { id: "t1", title: "Tutorial 1: Gaussian Elimination", chapter: "ch1", questions: 6, completed: true, pdfFile: "MA1508E_Tutorial_1.pdf" },
+      { id: "t2", title: "Tutorial 2: Matrix Algebra", chapter: "ch2", questions: 8, completed: true, pdfFile: "MA1508E_Tutorial_2.pdf" },
+      { id: "t3", title: "Tutorial 3: Determinant Computations", chapter: "ch3", questions: 5, completed: true, pdfFile: "MA1508E_Tutorial_3.pdf" },
+      { id: "t4", title: "Tutorial 4: Vectors & Products", chapter: "ch5", questions: 7, completed: true, pdfFile: "MA1508E_Tutorial_4.pdf" },
+    ],
+    pastTests: [
+      {
+        id: "midterm1", title: "Midterm Exam", date: "2026-07-20", totalScore: 68, maxScore: 100, duration: "120 min",
+        questions: [
+          { num: 1, chapter: "ch1", topic: "Row Reduction", questionText: "Solve the system using Gaussian elimination: 2x + y - z = 8, -3x - y + 2z = -11, -2x + y + 2z = -3", maxMarks: 15, scored: 14, correct: true, studentAnswer: "x=2, y=3, z=-1 (correct row reduction shown)", correctAnswer: "x=2, y=3, z=-1" },
+          { num: 2, chapter: "ch2", topic: "Matrix Multiplication", questionText: "Compute AB where A is 2×3 and B is 3×2. Then determine if BA is defined and if so, state its dimensions.", maxMarks: 15, scored: 13, correct: true, studentAnswer: "AB is 2×2. BA is defined and is 3×3.", correctAnswer: "AB is 2×2 (defined since A's cols = B's rows). BA is 3×3 (defined since B's 2 cols = A's 2 rows)." },
+          { num: 3, chapter: "ch3", topic: "Cofactor Expansion", questionText: "Find det(A) for the 3×3 matrix [[2,1,3],[0,4,1],[5,2,6]] using cofactor expansion along the first row.", maxMarks: 10, scored: 9, correct: true, studentAnswer: "det = 2(24-2) - 1(0-5) + 3(0-20) = 44 + 5 - 60 = -11", correctAnswer: "det = 2(4·6-1·2) - 1(0·6-1·5) + 3(0·2-4·5) = 2(22) - 1(-5) + 3(-20) = 44+5-60 = -11" },
+          { num: 4, chapter: "ch4", topic: "Basis & Dimension", questionText: "Determine if the vectors {(1,2,3), (4,5,6), (7,8,9)} form a basis for R³. Justify your answer.", maxMarks: 15, scored: 10, correct: false, studentAnswer: "Yes, they form a basis because there are 3 vectors in R³. (Did not check linear independence — these vectors are actually linearly dependent)", correctAnswer: "No. Row reduce the matrix formed by these vectors: det = 0, so they are linearly dependent. (7,8,9) = 2(4,5,6) - (1,2,3). Three linearly dependent vectors cannot span R³, so they do not form a basis." },
+          { num: 5, chapter: "ch5", topic: "Dot Product Applications", questionText: "Find the projection of vector u = (3, 4, 0) onto v = (1, 0, 0). Then find the component of u orthogonal to v.", maxMarks: 20, scored: 10, correct: false, studentAnswer: "proj_v(u) = (u·v/|v|²)v = (3/1)(1,0,0) = (3,0,0). Orthogonal component = u - proj = (0,4,0). (Correct projection but lost marks for not showing formula derivation and failing the second part asking for distance from u to the line spanned by v)", correctAnswer: "proj_v(u) = (u·v / v·v)v = (3/1)(1,0,0) = (3,0,0). Orthogonal component = u - proj_v(u) = (3,4,0)-(3,0,0) = (0,4,0). Distance from u to line = |orthogonal component| = 4." },
+          { num: 6, chapter: "ch5", topic: "Cross Product Geometry", questionText: "Given a = (1,2,3) and b = (4,5,6), find a×b and use it to determine the area of the parallelogram formed by a and b.", maxMarks: 15, scored: 7, correct: false, studentAnswer: "a×b = (2·6-3·5, 3·4-1·6, 1·5-2·4) = (12-15, 12-6, 5-8) = (-3, 6, -3). Area = |a×b| = √(9+36+9) = √54. (Computation error in second component: should be 3·4-1·6=6, not 12-6=6... wait that's the same. Let me recheck: got (-3,6,-3), correct is (-3,6,-3). Lost marks for not simplifying √54 = 3√6 and not interpreting geometric meaning)", correctAnswer: "a×b = |i  j  k; 1 2 3; 4 5 6| = i(12-15) - j(6-12) + k(5-8) = (-3, 6, -3). Area = |(-3,6,-3)| = √(9+36+9) = √54 = 3√6 ≈ 7.35 square units." },
+          { num: 7, chapter: "ch6", topic: "Eigenvalue Computation", questionText: "Find all eigenvalues of A = [[4,1],[2,3]]. For each eigenvalue, find the corresponding eigenvector.", maxMarks: 10, scored: 5, correct: false, studentAnswer: "det(A-λI) = (4-λ)(3-λ) - 2 = λ²-7λ+10 = (λ-5)(λ-2). Eigenvalues: λ=5, λ=2. (Correct eigenvalues but did not find eigenvectors — ran out of time)", correctAnswer: "λ=5: (A-5I)x=0 → [[-1,1],[2,-2]]x=0 → x = t(1,1). λ=2: (A-2I)x=0 → [[2,1],[2,1]]x=0 → x = t(1,-2). Eigenvectors: (1,1) for λ=5, (1,-2) for λ=2." },
+        ],
+      },
+    ],
+  },
+
+  "GEA1000": {
+    code: "GEA1000", name: "Quantitative Reasoning", credits: 4, color: "orange",
+    instructor: "Dr. Lim Mei Ling", semester: "Sem 1 AY2025/26",
+    pdfFile: "GEA1000_Lecture_Notes.pdf",
+    chapters: [
+      { id: "ch1", num: 1, title: "Data & Variables", pdfPage: 1 },
+      { id: "ch2", num: 2, title: "Descriptive Statistics", pdfPage: 20 },
+      { id: "ch3", num: 3, title: "Probability", pdfPage: 40 },
+      { id: "ch4", num: 4, title: "Hypothesis Testing", pdfPage: 60 },
+    ],
+    lectureNotes: {
+      "ch1": [{ heading: "Types of Data", content: "Data can be classified as quantitative (numerical) or qualitative (categorical). Quantitative data is further split into discrete and continuous. Understanding variable types is essential for choosing appropriate statistical methods." }],
+    },
+    tutorials: [
+      { id: "t1", title: "Tutorial 1: Exploring Data", chapter: "ch1", questions: 5, completed: true, pdfFile: "GEA1000_Tutorial_1.pdf" },
+      { id: "t2", title: "Tutorial 2: Central Tendency", chapter: "ch2", questions: 6, completed: true, pdfFile: "GEA1000_Tutorial_2.pdf" },
+    ],
+    pastTests: [
+      {
+        id: "quiz1", title: "Quiz 1", date: "2026-07-10", totalScore: 19, maxScore: 20, duration: "30 min",
+        questions: [
+          { num: 1, chapter: "ch1", topic: "Variable Classification", questionText: "Classify the following variables as quantitative (discrete/continuous) or qualitative: (a) Number of siblings, (b) Blood type, (c) Temperature in Celsius.", maxMarks: 5, scored: 5, correct: true, studentAnswer: "(a) Quantitative discrete, (b) Qualitative nominal, (c) Quantitative continuous", correctAnswer: "(a) Quantitative discrete, (b) Qualitative nominal, (c) Quantitative continuous" },
+          { num: 2, chapter: "ch1", topic: "Sampling Methods", questionText: "Describe stratified random sampling and give an example of when it would be more appropriate than simple random sampling.", maxMarks: 5, scored: 5, correct: true, studentAnswer: "Divide population into strata (homogeneous groups), then random sample from each. Better when population has distinct subgroups (e.g., sampling students from each faculty).", correctAnswer: "Stratified sampling divides the population into non-overlapping groups (strata) and samples from each. Preferred when the population has identifiable subgroups with different characteristics to ensure representation." },
+          { num: 3, chapter: "ch2", topic: "Mean & Median", questionText: "For the dataset {2, 3, 5, 7, 7, 8, 12, 15, 100}, calculate the mean and median. Which measure of central tendency is more appropriate here and why?", maxMarks: 5, scored: 5, correct: true, studentAnswer: "Mean = 17.67, Median = 7. Median is better because the outlier (100) heavily skews the mean.", correctAnswer: "Mean = 159/9 = 17.67, Median = 7 (middle value). Median is more appropriate because the outlier (100) inflates the mean, making it unrepresentative of the typical value." },
+          { num: 4, chapter: "ch2", topic: "Standard Deviation", questionText: "Explain why we divide by (n-1) instead of n when calculating sample standard deviation.", maxMarks: 5, scored: 4, correct: true, studentAnswer: "Using n-1 gives an unbiased estimate of population variance. Called Bessel's correction. (Missed explaining degrees of freedom concept)", correctAnswer: "Dividing by (n-1) provides an unbiased estimator of the population variance (Bessel's correction). We lose one degree of freedom because we estimate the population mean with the sample mean, constraining the last observation." },
+        ],
+      },
+    ],
+  },
+};
+
+
+const TASKS = [
+  { id: 1, title: "Lab Report: Logic Gate Simulation", course: "CG1111A", due: "2026-08-02", status: "overdue" },
+  { id: 2, title: "Problem Set 4 — Karnaugh Maps", course: "CG1111A", due: "2026-08-04", status: "due-soon" },
+  { id: 3, title: "Essay: OS Scheduling Algorithms", course: "CS2106", due: "2026-08-09", status: "upcoming" },
+  { id: 4, title: "Tutorial Worksheet 6", course: "MA1508E", due: "2026-08-11", status: "upcoming" },
+];
+
+const TIMETABLE = [
+  { time: "08:00", subject: "CG1111A Engineering Principles", type: "Lecture", room: "LT7", color: "bg-violet-100 text-violet-700 border-violet-200" },
+  { time: "10:00", subject: "CS2106 Operating Systems", type: "Tutorial", room: "COM1-0204", color: "bg-blue-100 text-blue-700 border-blue-200" },
+  { time: "12:00", subject: "Lunch Break", type: "", room: "", color: "bg-slate-100 text-slate-400 border-slate-200" },
+  { time: "14:00", subject: "MA1508E Linear Algebra", type: "Lecture", room: "LT27", color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  { time: "16:00", subject: "NUSSU Robotics CCA", type: "CCA", room: "E4-03-09", color: "bg-orange-100 text-orange-700 border-orange-200" },
+];
+
+const WEAK_TOPICS = [
+  { id: "state-machines", chapter: "ch3", chapterLabel: "Chapter 3", topic: "State Machines", course: "CG1111A", score: 42, trend: "down" },
+  { id: "vector-math", chapter: "ch5", chapterLabel: "Chapter 5", topic: "Vector Math & Dot Products", course: "MA1508E", score: 55, trend: "up" },
+  { id: "process-sync", chapter: "ch7", chapterLabel: "Chapter 7", topic: "Process Synchronisation", course: "CS2106", score: 48, trend: "stable" },
+];
+
+const FACULTY = [
+  { name: "Prof. Smith", email: "prof.smith@nus.edu.sg", role: "Course Coordinator", course: "CG1111A", office: "E4-06-11", hours: "Tue & Thu 2–4pm" },
+  { name: "Dr. Lee Wei Lin", email: "drlee@nus.edu.sg", role: "Lecturer", course: "CS2106", office: "COM2-02-19", hours: "Mon & Wed 10am–12pm" },
+  { name: "Prof. Tan Ah Kow", email: "tankow@nus.edu.sg", role: "Senior Lecturer", course: "MA1508E", office: "S17-04-08", hours: "Fri 1–3pm" },
+  { name: "Mr. Jason Ng", email: "jasonng@nus.edu.sg", role: "Teaching Assistant", course: "CG1111A", office: "E4-04-Lab", hours: "Mon 4–6pm" },
+];
+
+const AI_RESPONSES = {
+  explain: (topic, text) => `**Explaining: "${topic}"**\n\nHere's a clear breakdown:\n\n**Core Idea:**\n${text.length > 80 ? text.substring(0, 80) + "..." : text}\n\n**Key Points:**\n• This is a foundational concept used throughout the course\n• Understand the definitions before attempting problem sets\n• Connect this to adjacent chapters for a holistic view\n\n**Simple Analogy:**\nThink of familiar everyday systems that demonstrate the same principle — exam questions often test whether you can identify the concept in a new context.\n\n💡 *Try the practice quiz or escalate to your professor if still unclear.*`,
+  quiz_intro: (topic) => `Here's a **3-question practice quiz** on **${topic}**. Take your time!\n\n📝 *Click an option to select, then hit "Submit Answers".*`,
+};
+
+const QUIZ_BANK = {
+  "state-machines": {
+    topic: "State Machines", course: "CG1111A",
+    questions: [
+      { q: "In a Moore machine, the output depends on:", options: ["Both current state and input", "Only the current input", "Only the current state", "The next state"], answer: 2, explanation: "Moore outputs depend solely on the current state." },
+      { q: "A state transition in an FSM is best described as:", options: ["Output change without state change", "Movement between states triggered by input", "An infinite loop in one state", "A hardware reset"], answer: 1, explanation: "Transitions move the FSM between states when input conditions are met." },
+      { q: "Next-State Logic is:", options: ["An output generator", "A combinational circuit computing next state", "A flip-flop array", "A clock source"], answer: 1, explanation: "Next-state logic is combinational — it computes the next state from current state + inputs." },
+    ],
+  },
+  "vector-math": {
+    topic: "Vector Math & Dot Products", course: "MA1508E",
+    questions: [
+      { q: "The dot product of two perpendicular vectors is:", options: ["1", "−1", "0", "Undefined"], answer: 2, explanation: "cos(90°) = 0, so the dot product equals zero." },
+      { q: "A = [3, 4], B = [1, 0]. What is A · B?", options: ["7", "3", "4", "5"], answer: 1, explanation: "(3×1) + (4×0) = 3." },
+      { q: "Which does NOT produce a scalar?", options: ["Dot product", "Magnitude", "Cross product", "Scalar projection"], answer: 2, explanation: "Cross product produces a vector, not a scalar." },
+    ],
+  },
+  "process-sync": {
+    topic: "Process Synchronisation", course: "CS2106",
+    questions: [
+      { q: "A race condition occurs when:", options: ["Processes finish simultaneously", "Outcome depends on non-deterministic scheduling", "CPU time is exceeded", "Semaphore drops below zero"], answer: 1, explanation: "Race conditions arise from unpredictable execution ordering." },
+      { q: "Mutual exclusion ensures:", options: ["Bounded finishing time", "Only one process in critical section", "Round-robin scheduling", "No deadlock"], answer: 1, explanation: "Mutual exclusion prevents concurrent critical section access." },
+      { q: "NOT a condition for deadlock:", options: ["Mutual exclusion", "Hold and wait", "Preemption allowed", "Circular wait"], answer: 2, explanation: "Deadlock requires NO preemption. If preemption is allowed, deadlock cannot hold." },
+    ],
+  },
+};
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UTILITY COMPONENTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const Badge = ({ children, color = "slate" }) => {
+  const colors = { red: "bg-red-100 text-red-700", orange: "bg-orange-100 text-orange-700", yellow: "bg-yellow-100 text-yellow-700", green: "bg-emerald-100 text-emerald-700", blue: "bg-blue-100 text-blue-700", violet: "bg-violet-100 text-violet-700", slate: "bg-slate-100 text-slate-600", emerald: "bg-emerald-100 text-emerald-700" };
+  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${colors[color] || colors.slate}`}>{children}</span>;
+};
+
+const ScoreBar = ({ score, height = "h-1.5" }) => {
+  const color = score < 50 ? "bg-red-400" : score < 65 ? "bg-yellow-400" : score < 80 ? "bg-blue-400" : "bg-emerald-400";
+  return (
+    <div className={`w-full bg-slate-100 rounded-full ${height}`}>
+      <div className={`${color} ${height} rounded-full transition-all duration-700`} style={{ width: `${score}%` }} />
+    </div>
+  );
+};
+
+const MarkdownText = ({ text }) => {
+  const lines = text.split("\n");
+  return (
+    <div className="space-y-1 text-sm leading-relaxed">
+      {lines.map((line, i) => {
+        if (!line.trim()) return <div key={i} className="h-1" />;
+        if (line.startsWith("**") && line.endsWith("**")) return <p key={i} className="font-semibold text-slate-800">{line.replace(/\*\*/g, "")}</p>;
+        const bold = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        if (line.startsWith("•")) return <p key={i} className="pl-3 text-slate-700" dangerouslySetInnerHTML={{ __html: bold }} />;
+        return <p key={i} className="text-slate-700" dangerouslySetInnerHTML={{ __html: bold }} />;
+      })}
+    </div>
+  );
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PDF VIEWER MODAL (Dark Mode)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const PDFViewerModal = ({ fileName, title, initialPage, totalPages, onClose }) => {
+  const [currentPage, setCurrentPage] = useState(initialPage || 1);
+  const [jumpInput, setJumpInput] = useState("");
+  const pages = totalPages || 120;
+
+  const goToPage = (p) => { const pg = Math.max(1, Math.min(pages, p)); setCurrentPage(pg); };
+  const handleJump = () => { const p = parseInt(jumpInput); if (!isNaN(p)) { goToPage(p); setJumpInput(""); } };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center pdf-viewer-modal" style={{ background: "rgba(0,0,0,0.85)" }}>
+      <div className="bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden border border-slate-700">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700 bg-slate-800 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center">
+              <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 20 20"><path d="M4 18h12a2 2 0 002-2V6l-4-4H4a2 2 0 00-2 2v12a2 2 0 002 2zm8-14l4 4h-4V4z"/></svg>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-white">{title || fileName}</h3>
+              <p className="text-xs text-slate-400">{fileName}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <a href={`#download-${fileName}`} onClick={(e) => { e.preventDefault(); alert(`Downloading ${fileName}...`); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-medium text-slate-200 transition-colors">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+              Download PDF
+            </a>
+            <button onClick={onClose} className="w-8 h-8 rounded-lg bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-slate-300 hover:text-white transition-colors">✕</button>
+          </div>
+        </div>
+
+        {/* PDF Content Area (simulated) */}
+        <div className="flex-1 overflow-auto bg-slate-950 flex items-center justify-center p-8">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl min-h-[60vh] p-12 flex flex-col items-center justify-center">
+            <div className="text-center space-y-4">
+              <div className="w-16 h-16 mx-auto rounded-2xl bg-slate-100 flex items-center justify-center">
+                <svg className="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+              </div>
+              <div>
+                <h4 className="text-lg font-bold text-slate-800">{title || fileName}</h4>
+                <p className="text-sm text-slate-500 mt-1">Page {currentPage} of {pages}</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-6 border border-slate-200 max-w-md">
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  📄 This is a simulated PDF viewer displaying <strong>page {currentPage}</strong> of the document.
+                  In production, this would render the actual PDF content using a library like PDF.js.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer Navigation */}
+        <div className="flex items-center justify-between px-5 py-3 border-t border-slate-700 bg-slate-800 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <button onClick={() => goToPage(1)} disabled={currentPage === 1} className="px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-medium text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">⟨⟨</button>
+            <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1} className="px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-medium text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">← Prev</button>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-slate-300">Page {currentPage} / {pages}</span>
+            <div className="flex items-center gap-1 ml-3">
+              <input type="number" value={jumpInput} onChange={(e) => setJumpInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleJump(); }}
+                placeholder="Go to..." className="w-20 px-2 py-1.5 rounded-lg bg-slate-700 border border-slate-600 text-xs text-white placeholder-slate-400 outline-none focus:border-indigo-500" />
+              <button onClick={handleJump} className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white transition-colors">Jump</button>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === pages} className="px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-medium text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Next →</button>
+            <button onClick={() => goToPage(pages)} disabled={currentPage === pages} className="px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-medium text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">⟩⟩</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EMAIL MODAL
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const EmailModal = ({ topic, course, professor, onClose }) => {
+  const profName = professor || "Prof. Smith";
+  const profEmail = FACULTY.find(f => f.name === profName)?.email || "prof.smith@nus.edu.sg";
+  const subject = `[Office Hours Request] Struggling with ${topic} — ${course}`;
+  const body = `Dear ${profName},\n\nI am Alex Chen (A0234567B), currently enrolled in ${course}. I am writing to request a brief consultation regarding "${topic}".\n\nAfter reviewing the lecture notes and attempting practice problems, I still have gaps in my understanding that I believe would benefit from your guidance.\n\nCould we schedule a 15–20 minute session at a time convenient for you?\n\nBest regards,\nAlex Chen\n${course} — Year 2, Semester 1`;
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => { navigator.clipboard?.writeText(`Subject: ${subject}\n\n${body}`).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); };
+  const mailtoLink = `mailto:${profEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.6)", backdropFilter: "blur(4px)" }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-violet-100 flex items-center justify-center text-lg">✉️</div>
+            <div><h3 className="font-semibold text-slate-900 text-sm">Draft Email to {profName}</h3><p className="text-xs text-slate-400">Auto-filled from session context</p></div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500">✕</button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div><label className="block text-xs font-medium text-slate-500 mb-1">TO</label><div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700">{profName} &lt;{profEmail}&gt;</div></div>
+          <div><label className="block text-xs font-medium text-slate-500 mb-1">SUBJECT</label><div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 font-medium">{subject}</div></div>
+          <div><label className="block text-xs font-medium text-slate-500 mb-1">MESSAGE</label><div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-3 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{body}</div></div>
+        </div>
+        <div className="flex items-center gap-3 p-5 pt-0">
+          <a href={mailtoLink} target="_blank" rel="noreferrer" className="flex-1 bg-gradient-to-r from-violet-600 to-purple-600 text-white text-sm font-semibold py-2.5 px-4 rounded-xl text-center hover:opacity-90">📨 Open in Mail App</a>
+          <button onClick={handleCopy} className={`flex-1 border text-sm font-semibold py-2.5 px-4 rounded-xl transition-all ${copied ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"}`}>{copied ? "✓ Copied!" : "📋 Copy Draft"}</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// QUIZ CARD (for chat)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const QuizCard = ({ topicId, onEmailEscalate }) => {
+  const quiz = QUIZ_BANK[topicId];
+  const [selections, setSelections] = useState({});
+  const [submitted, setSubmitted] = useState(false);
+  const [score, setScore] = useState(null);
+  if (!quiz) return null;
+  const handleSelect = (qIdx, oIdx) => { if (!submitted) setSelections(prev => ({ ...prev, [qIdx]: oIdx })); };
+  const handleSubmit = () => { if (Object.keys(selections).length < quiz.questions.length) return; let c = 0; quiz.questions.forEach((q, i) => { if (selections[i] === q.answer) c++; }); setScore(c); setSubmitted(true); };
+  const handleReset = () => { setSelections({}); setSubmitted(false); setScore(null); };
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mt-2">
+      <div className="bg-gradient-to-r from-indigo-500 to-violet-600 px-4 py-2.5"><span className="text-white text-sm font-semibold">📝 Quiz: {quiz.topic}</span></div>
+      <div className="p-4 space-y-4">
+        {quiz.questions.map((q, qIdx) => (
+          <div key={qIdx} className="space-y-1.5">
+            <p className="text-sm font-medium text-slate-800">Q{qIdx+1}. {q.q}</p>
+            {q.options.map((opt, oIdx) => {
+              let cls = "quiz-option w-full text-left text-xs px-3 py-2 rounded-lg border cursor-pointer ";
+              if (!submitted) cls += selections[qIdx] === oIdx ? "bg-indigo-50 border-indigo-400 text-indigo-700 font-medium" : "bg-white border-slate-200 text-slate-700";
+              else if (oIdx === q.answer) cls += "bg-emerald-50 border-emerald-400 text-emerald-800 font-medium submitted";
+              else if (oIdx === selections[qIdx]) cls += "bg-red-50 border-red-300 text-red-700 submitted";
+              else cls += "bg-white border-slate-100 text-slate-400 submitted";
+              return <button key={oIdx} className={cls} onClick={() => handleSelect(qIdx, oIdx)}><span className="font-mono mr-2">{String.fromCharCode(65+oIdx)}.</span>{opt}{submitted && oIdx === q.answer && " ✓"}{submitted && oIdx === selections[qIdx] && selections[qIdx] !== q.answer && " ✗"}</button>;
+            })}
+            {submitted && <p className="text-xs px-3 py-2 rounded-lg bg-blue-50 text-blue-700">💬 {q.explanation}</p>}
+          </div>
+        ))}
+      </div>
+      <div className="px-4 pb-4">
+        {!submitted ? <button onClick={handleSubmit} disabled={Object.keys(selections).length < quiz.questions.length} className="w-full py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 text-white disabled:opacity-40">Submit ({Object.keys(selections).length}/3)</button>
+        : <div className="space-y-2"><div className={`text-center py-2 rounded-xl text-sm font-semibold ${score===3?"bg-emerald-100 text-emerald-700":score>=2?"bg-blue-100 text-blue-700":"bg-red-100 text-red-700"}`}>Score: {score}/3</div><div className="flex gap-2"><button onClick={handleReset} className="flex-1 py-2 rounded-xl text-xs font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50">↺ Retry</button>{score<3&&<button onClick={()=>onEmailEscalate(quiz.topic,quiz.course)} className="flex-1 py-2 rounded-xl text-xs font-semibold bg-amber-50 border border-amber-200 text-amber-700">✉️ Ask Prof</button>}</div></div>}
+      </div>
+    </div>
+  );
+};
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CHAT PANEL (persistent right side)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const ChatPanel = ({ onEmailEscalate }) => {
+  const [messages, setMessages] = useState([
+    { id: 1, role: "ai", type: "text", text: "Hi Alex! 👋 I'm your **StudySync AI** copilot.\n\n• **Explain concepts** — highlight text in Lecture Notes\n• **Practice quizzes** — test your weak topics\n• **Email professors** — one-click escalation\n\nAsk me anything!" },
+  ]);
+  const [input, setInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const endRef = useRef(null);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  const add = (msg) => setMessages(p => [...p, { id: Date.now()+Math.random(), ...msg }]);
+  const typing = (cb, d=900) => { setIsTyping(true); setTimeout(() => { setIsTyping(false); cb(); }, d); };
+
+  const handleExplain = useCallback((text, topic) => {
+    add({ role: "user", type: "text", text: `Explain: "${text.substring(0,50)}${text.length>50?"...":""}"` });
+    typing(() => { add({ role: "ai", type: "text", text: AI_RESPONSES.explain(topic, text) }); add({ role: "ai", type: "escalate-prompt", topic, course: "CG1111A" }); }, 1000);
+  }, []);
+
+  const handleQuizRequest = useCallback((topicId, topicName) => {
+    add({ role: "user", type: "text", text: `Quiz me on: ${topicName}` });
+    typing(() => { add({ role: "ai", type: "text", text: AI_RESPONSES.quiz_intro(topicName) }); add({ role: "ai", type: "quiz", topicId }); }, 800);
+  }, []);
+
+  const handleSend = () => {
+    const t = input.trim(); if (!t) return;
+    add({ role: "user", type: "text", text: t }); setInput("");
+    const lower = t.toLowerCase();
+    typing(() => {
+      if (lower.includes("quiz") || lower.includes("practice")) { add({ role: "ai", type: "text", text: "Which topic? Pick one:" }); add({ role: "ai", type: "quiz-picker" }); }
+      else if (lower.includes("explain") || lower.includes("what is")) { add({ role: "ai", type: "text", text: "Highlight text in **Lecture Notes** and click **Explain This**, or go to a module's notes page!" }); }
+      else if (lower.includes("email") || lower.includes("prof")) { add({ role: "ai", type: "escalate-prompt", topic: "State Machines", course: "CG1111A" }); }
+      else { add({ role: "ai", type: "text", text: `I can help with that! Try:\n• Highlighting lecture notes → "Explain This"\n• Opening a module → Past Tests to see weak chapters\n• Asking me: *"Quiz me on State Machines"*` }); }
+    });
+  };
+
+  window._studysyncExplain = handleExplain;
+  window._studysyncQuizRequest = handleQuizRequest;
+
+  return (
+    <div className="flex flex-col h-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-violet-50 to-indigo-50 flex-shrink-0">
+        <div className="relative">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold">AI</div>
+          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 rounded-full border-2 border-white pulse-dot" />
+        </div>
+        <div><p className="text-sm font-semibold text-slate-900">StudySync AI</p><p className="text-xs text-slate-400">Always online</p></div>
+      </div>
+      <div className="flex-1 overflow-y-auto scrollbar-thin p-4 space-y-3">
+        {messages.map(msg => (
+          <div key={msg.id} className={`flex ${msg.role==="user"?"justify-end":"justify-start"}`}>
+            {msg.role === "ai" && (
+              <div className="flex flex-col gap-1 max-w-[88%]">
+                {msg.type === "text" && <div className="chat-bubble-ai rounded-2xl rounded-tl-sm px-4 py-3 border border-blue-100"><MarkdownText text={msg.text} /></div>}
+                {msg.type === "escalate-prompt" && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl rounded-tl-sm px-4 py-3">
+                    <p className="text-xs text-amber-700 font-medium mb-2">Need more help? Escalate to your professor.</p>
+                    <button onClick={() => onEmailEscalate(msg.topic, msg.course)} className="w-full py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:opacity-90">✉️ Draft Email to Prof</button>
+                  </div>
+                )}
+                {msg.type === "quiz" && <QuizCard topicId={msg.topicId} onEmailEscalate={onEmailEscalate} />}
+                {msg.type === "quiz-picker" && (
+                  <div className="chat-bubble-ai rounded-2xl rounded-tl-sm px-4 py-3 border border-blue-100 space-y-2">
+                    {WEAK_TOPICS.map(t => <button key={t.id} onClick={() => handleQuizRequest(t.id, t.topic)} className="w-full text-left px-3 py-2 rounded-xl bg-white border border-slate-200 hover:border-violet-300 hover:bg-violet-50 text-xs font-medium text-slate-700 flex justify-between"><span>{t.chapterLabel}: {t.topic}</span><span className="text-red-500">{t.score}%</span></button>)}
+                  </div>
+                )}
+              </div>
+            )}
+            {msg.role === "user" && <div className="chat-bubble-user rounded-2xl rounded-tr-sm px-4 py-3 max-w-[80%]"><p className="text-sm text-white">{msg.text}</p></div>}
+          </div>
+        ))}
+        {isTyping && <div className="flex justify-start"><div className="chat-bubble-ai rounded-2xl rounded-tl-sm px-4 py-3 border border-blue-100 flex gap-1.5">{[0,150,300].map(d=><span key={d} className="w-2 h-2 bg-indigo-400 rounded-full pulse-dot" style={{animationDelay:`${d}ms`}}/>)}</div></div>}
+        <div ref={endRef} />
+      </div>
+      <div className="p-3 border-t border-slate-100 bg-slate-50 flex-shrink-0">
+        <div className="flex items-end gap-2 bg-white rounded-xl border border-slate-200 shadow-sm px-3 py-2">
+          <textarea rows={1} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();handleSend();}}} placeholder="Ask anything…" className="flex-1 text-sm text-slate-700 resize-none outline-none bg-transparent placeholder-slate-400 max-h-20 py-0.5" />
+          <button onClick={handleSend} disabled={!input.trim()} className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 text-white flex items-center justify-center disabled:opacity-30 flex-shrink-0">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.269 20.876L5.999 12zm0 0h7.5" /></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DASHBOARD CARDS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const StudentProfileCard = () => (
+  <div className="card-hover bg-gradient-to-br from-violet-600 via-indigo-600 to-purple-700 rounded-2xl p-5 text-white shadow-lg">
+    <div className="flex items-start justify-between">
+      <div className="flex items-center gap-3">
+        <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center text-xl font-bold">{STUDENT.avatar}</div>
+        <div><h2 className="font-bold text-lg">{STUDENT.name}</h2><p className="text-violet-200 text-xs">{STUDENT.major}</p><p className="text-violet-300 text-xs">{STUDENT.term}</p></div>
+      </div>
+      <div className="text-right"><p className="text-2xl font-bold">{STUDENT.gpa}</p><p className="text-violet-200 text-xs">GPA</p></div>
+    </div>
+    <div className="mt-4 grid grid-cols-4 gap-2">
+      {[{l:"Modules",v:STUDENT.enrolled},{l:"Weak",v:WEAK_TOPICS.length},{l:"Overdue",v:TASKS.filter(t=>t.status==="overdue").length},{l:"Due Soon",v:TASKS.filter(t=>t.status==="due-soon").length}].map(({l,v})=>
+        <div key={l} className="bg-white/10 rounded-xl px-2 py-2 text-center"><p className="text-lg font-bold">{v}</p><p className="text-violet-200 text-xs">{l}</p></div>
+      )}
+    </div>
+  </div>
+);
+
+const TasksCard = () => {
+  const cfg = { overdue: { color: "text-red-600", bg: "bg-red-50 border-red-200", dot: "bg-red-400", label: "Overdue" }, "due-soon": { color: "text-orange-600", bg: "bg-orange-50 border-orange-200", dot: "bg-orange-400", label: "Due Soon" }, upcoming: { color: "text-slate-500", bg: "bg-slate-50 border-slate-200", dot: "bg-slate-300", label: "Upcoming" } };
+  return (
+    <div className="card-hover bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+      <h3 className="font-semibold text-slate-900 text-sm flex items-center gap-2 mb-3">📋 Tasks <Badge color="red">{TASKS.filter(t=>t.status==="overdue").length} Overdue</Badge></h3>
+      <div className="space-y-2">{TASKS.map(task=>{const c=cfg[task.status];return <div key={task.id} className={`flex items-center gap-3 p-2.5 rounded-xl border ${c.bg}`}><span className={`w-2 h-2 rounded-full ${c.dot} flex-shrink-0`}/><div className="flex-1 min-w-0"><p className="text-xs font-medium text-slate-800 truncate">{task.title}</p><p className="text-xs text-slate-400">{task.course} · <span className={c.color}>{c.label}</span></p></div></div>;})}</div>
+    </div>
+  );
+};
+
+const TimetableCard = () => (
+  <div className="card-hover bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+    <h3 className="font-semibold text-slate-900 text-sm mb-3">🗓️ Today's Schedule</h3>
+    <div className="space-y-1.5">{TIMETABLE.map((s,i)=><div key={i} className={`flex items-center gap-3 p-2 rounded-xl border ${s.color}`}><span className="text-xs font-mono font-semibold w-11 flex-shrink-0">{s.time}</span><div className="flex-1 min-w-0"><p className="text-xs font-medium truncate">{s.subject}</p>{s.room&&<p className="text-xs opacity-60">{s.type} · {s.room}</p>}</div></div>)}</div>
+  </div>
+);
+
+const WeakTopicsCard = ({ onQuizRequest, onEmailEscalate, onViewNotes }) => (
+  <div className="card-hover bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+    <h3 className="font-semibold text-slate-900 text-sm mb-3 flex items-center gap-2">🎯 Weak Topics <span className="ml-auto text-xs text-slate-400 font-normal">AI-Identified</span></h3>
+    <div className="space-y-3">
+      {WEAK_TOPICS.map(topic => (
+        <div key={topic.id}>
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <div><p className="text-xs font-semibold text-slate-700">{topic.chapterLabel}: {topic.topic}</p><p className="text-xs text-slate-400">{topic.course}</p></div>
+            <span className={`text-xs font-bold ${topic.score<50?"text-red-500":"text-yellow-600"}`}>{topic.score}%</span>
+          </div>
+          <ScoreBar score={topic.score} />
+          <div className="flex gap-1.5 mt-2">
+            <button onClick={() => onViewNotes(topic.course, topic.chapter)} className="flex-1 text-xs py-1.5 rounded-lg bg-violet-50 border border-violet-200 text-violet-700 font-medium hover:bg-violet-100 transition-colors">📖 View Notes</button>
+            <button onClick={() => onQuizRequest(topic.id, topic.topic)} className="flex-1 text-xs py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 font-medium hover:bg-indigo-100 transition-colors">📝 Quiz</button>
+            <button onClick={() => onEmailEscalate(topic.topic, topic.course)} className="flex-1 text-xs py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 font-medium hover:bg-amber-100 transition-colors">✉️ Prof</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MODULES PAGE — List of all modules (clickable)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const ModulesPage = ({ onSelectModule }) => {
+  const colorMap = { violet: "from-violet-500 to-indigo-600", blue: "from-blue-500 to-cyan-600", emerald: "from-emerald-500 to-teal-600", orange: "from-orange-500 to-amber-600" };
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-slate-900">📚 My Modules</h1>
+        <p className="text-sm text-slate-500 mt-1">Click a module to view past tests, lecture notes, and tutorials.</p>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {Object.values(MODULES).map(mod => {
+          const weakCount = WEAK_TOPICS.filter(w => w.course === mod.code).length;
+          const latestTest = mod.pastTests[0];
+          return (
+            <button key={mod.code} onClick={() => onSelectModule(mod.code)}
+              className={`card-hover text-left bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:border-indigo-300 transition-all group`}>
+              <div className="flex items-start gap-3 mb-3">
+                <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${colorMap[mod.color]} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
+                  {mod.code.substring(0, 2)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-slate-900 group-hover:text-indigo-700 transition-colors">{mod.code}</p>
+                  <p className="text-xs text-slate-500 truncate">{mod.name}</p>
+                  <p className="text-xs text-slate-400">{mod.instructor} · {mod.credits} MC</p>
+                </div>
+                <svg className="w-5 h-5 text-slate-300 group-hover:text-indigo-500 transition-colors flex-shrink-0 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <div className="text-center p-2 rounded-lg bg-slate-50">
+                  <p className="text-xs font-bold text-slate-700">{latestTest ? Math.round(latestTest.totalScore / latestTest.maxScore * 100) : "—"}%</p>
+                  <p className="text-xs text-slate-400">Last Test</p>
+                </div>
+                <div className="text-center p-2 rounded-lg bg-slate-50">
+                  <p className={`text-xs font-bold ${weakCount > 0 ? "text-red-500" : "text-emerald-600"}`}>{weakCount}</p>
+                  <p className="text-xs text-slate-400">Weak Topics</p>
+                </div>
+              </div>
+              {weakCount > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {WEAK_TOPICS.filter(w => w.course === mod.code).map(w => <Badge key={w.id} color="red">{w.topic}</Badge>)}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MODULE DETAIL PAGE — Sub-tabs: Past Tests, Lecture Notes, Tutorials
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const ModuleDetailPage = ({ moduleCode, onBack, initialTab, highlightChapter, onEmailEscalate, onOpenPDF }) => {
+  const mod = MODULES[moduleCode];
+  const [activeTab, setActiveTab] = useState(initialTab || "tests");
+  const [highlightedChapter, setHighlightedChapter] = useState(highlightChapter || null);
+
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+    if (highlightChapter) setHighlightedChapter(highlightChapter);
+  }, [initialTab, highlightChapter]);
+
+  if (!mod) return <div className="text-center py-20 text-slate-400">Module not found.</div>;
+
+  const colorMap = { violet: "from-violet-500 to-indigo-600", blue: "from-blue-500 to-cyan-600", emerald: "from-emerald-500 to-teal-600", orange: "from-orange-500 to-amber-600" };
+  const tabs = [
+    { id: "tests", icon: "📊", label: "Past Tests" },
+    { id: "notes", icon: "📖", label: "Lecture Notes" },
+    { id: "tutorials", icon: "📝", label: "Tutorials" },
+  ];
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-5">
+      {/* Header */}
+      <div className="flex items-start gap-4">
+        <button onClick={onBack} className="mt-1 w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 flex-shrink-0 transition-colors">←</button>
+        <div className="flex-1">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${colorMap[mod.color]} flex items-center justify-center text-white text-xs font-bold`}>{mod.code.substring(0,2)}</div>
+            <div>
+              <h1 className="text-lg font-bold text-slate-900">{mod.code}: {mod.name}</h1>
+              <p className="text-xs text-slate-500">{mod.instructor} · {mod.credits} MC · {mod.semester}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Sub-tabs */}
+      <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
+        {tabs.map(tab => (
+          <button key={tab.id} onClick={() => { setActiveTab(tab.id); if (tab.id !== "notes") setHighlightedChapter(null); }}
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === tab.id ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+            <span>{tab.icon}</span> {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === "tests" && <PastTestsView mod={mod} onViewNotes={(ch) => { setActiveTab("notes"); setHighlightedChapter(ch); }} onOpenPDF={onOpenPDF} />}
+      {activeTab === "notes" && <LectureNotesView mod={mod} highlightChapter={highlightedChapter} onClearHighlight={() => setHighlightedChapter(null)} onOpenPDF={onOpenPDF} />}
+      {activeTab === "tutorials" && <TutorialsView mod={mod} onOpenPDF={onOpenPDF} />}
+    </div>
+  );
+};
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PAST TESTS VIEW — Shows scores + full question breakdown with answers
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const PastTestsView = ({ mod, onViewNotes, onOpenPDF }) => {
+  const [expandedTest, setExpandedTest] = useState(null);
+
+  // Compute chapter weakness from all wrong answers across tests
+  const chapterWeakness = {};
+  mod.pastTests.forEach(test => {
+    test.questions.forEach(q => {
+      if (!chapterWeakness[q.chapter]) chapterWeakness[q.chapter] = { total: 0, lost: 0, wrong: 0, topics: [] };
+      chapterWeakness[q.chapter].total += q.maxMarks;
+      if (!q.correct) {
+        chapterWeakness[q.chapter].lost += (q.maxMarks - q.scored);
+        chapterWeakness[q.chapter].wrong++;
+        if (!chapterWeakness[q.chapter].topics.includes(q.topic)) chapterWeakness[q.chapter].topics.push(q.topic);
+      }
+    });
+  });
+
+  const sortedWeakChapters = Object.entries(chapterWeakness)
+    .filter(([_, data]) => data.wrong > 0)
+    .sort((a, b) => b[1].lost - a[1].lost);
+
+  return (
+    <div className="space-y-5">
+      {/* Chapter Weakness Analysis */}
+      {sortedWeakChapters.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
+          <h3 className="text-sm font-semibold text-red-900 flex items-center gap-2 mb-3">⚠️ Chapter Weakness Analysis <Badge color="red">{sortedWeakChapters.length} weak chapters</Badge></h3>
+          <p className="text-xs text-red-700 mb-4">Based on incorrect answers across all tests. Chapters are ranked by total marks lost.</p>
+          <div className="space-y-3">
+            {sortedWeakChapters.map(([chId, data]) => {
+              const ch = mod.chapters.find(c => c.id === chId);
+              const pct = Math.round((1 - data.lost / data.total) * 100);
+              return (
+                <div key={chId} className="bg-white rounded-xl border border-red-100 p-4">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">Ch {ch?.num}: {ch?.title}</p>
+                      <p className="text-xs text-red-600 mt-0.5">{data.wrong} question{data.wrong > 1 ? "s" : ""} wrong · {data.lost} marks lost</p>
+                    </div>
+                    <div className="text-right">
+                      <p className={`text-sm font-bold ${pct < 50 ? "text-red-600" : "text-yellow-600"}`}>{pct}%</p>
+                      <p className="text-xs text-slate-400">retention</p>
+                    </div>
+                  </div>
+                  <ScoreBar score={pct} height="h-2" />
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {data.topics.map(t => <span key={t} className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">{t}</span>)}
+                  </div>
+                  <button onClick={() => onViewNotes(chId)}
+                    className="mt-3 w-full py-2 rounded-xl text-xs font-semibold bg-violet-50 border border-violet-200 text-violet-700 hover:bg-violet-100 transition-colors flex items-center justify-center gap-1.5">
+                    📖 View Lecture Notes for this Chapter
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Individual Tests */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-semibold text-slate-900">📋 All Tests & Exams</h3>
+        {mod.pastTests.map(test => {
+          const pct = Math.round(test.totalScore / test.maxScore * 100);
+          const isExpanded = expandedTest === test.id;
+          return (
+            <div key={test.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <button onClick={() => setExpandedTest(isExpanded ? null : test.id)}
+                className="w-full flex items-center gap-4 p-5 text-left hover:bg-slate-50 transition-colors">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-sm ${pct >= 70 ? "bg-emerald-500" : pct >= 50 ? "bg-yellow-500" : "bg-red-500"}`}>{pct}%</div>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-slate-900">{test.title}</p>
+                  <p className="text-xs text-slate-500">{new Date(test.date).toLocaleDateString("en-GB", {day:"numeric",month:"short",year:"numeric"})} · {test.duration} · {test.totalScore}/{test.maxScore} marks</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge color={pct >= 70 ? "green" : pct >= 50 ? "orange" : "red"}>{test.questions.filter(q=>!q.correct).length} wrong</Badge>
+                  <svg className={`w-5 h-5 text-slate-400 transition-transform ${isExpanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                </div>
+              </button>
+              {isExpanded && (
+                <div className="border-t border-slate-100 p-5 space-y-4">
+                  {test.questions.map(q => {
+                    const ch = mod.chapters.find(c => c.id === q.chapter);
+                    return (
+                      <div key={q.num} className={`rounded-xl border overflow-hidden ${q.correct ? "border-emerald-200" : "border-red-200"}`}>
+                        {/* Question header */}
+                        <div className={`flex items-center gap-3 p-4 ${q.correct ? "bg-emerald-50" : "bg-red-50"}`}>
+                          <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${q.correct ? "bg-emerald-200 text-emerald-800" : "bg-red-200 text-red-800"}`}>{q.correct ? "✓" : "✗"}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-slate-800">Q{q.num}: {q.topic}</p>
+                            <p className="text-xs text-slate-500">Ch {ch?.num}: {ch?.title} · {q.scored}/{q.maxMarks} marks</p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className={`text-lg font-bold ${q.correct ? "text-emerald-700" : "text-red-700"}`}>{q.scored}/{q.maxMarks}</p>
+                          </div>
+                        </div>
+                        {/* Question details */}
+                        <div className="p-4 bg-white space-y-3">
+                          {/* Question text */}
+                          <div>
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Question</p>
+                            <p className="text-sm text-slate-700 leading-relaxed bg-slate-50 rounded-lg p-3 border border-slate-100">{q.questionText}</p>
+                          </div>
+                          {/* Student's answer */}
+                          <div>
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Your Answer</p>
+                            <div className={`text-sm leading-relaxed rounded-lg p-3 border ${q.correct ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-red-50 border-red-200 text-red-800"}`}>
+                              {q.studentAnswer}
+                            </div>
+                          </div>
+                          {/* Correct answer (shown only if wrong) */}
+                          {!q.correct && (
+                            <div>
+                              <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wide mb-1">✓ Correct Answer</p>
+                              <div className="text-sm leading-relaxed rounded-lg p-3 border bg-emerald-50 border-emerald-200 text-emerald-800">
+                                {q.correctAnswer}
+                              </div>
+                            </div>
+                          )}
+                          {/* Jump to notes button for wrong answers */}
+                          {!q.correct && (
+                            <button onClick={() => onOpenPDF(mod.pdfFile, `${mod.code} — Ch ${ch?.num}: ${ch?.title}`, ch?.pdfPage || 1)}
+                              className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-violet-50 to-indigo-50 border border-violet-200 text-violet-700 hover:from-violet-100 hover:to-indigo-100 transition-all">
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                              Jump to Topic Notes — Ch {ch?.num}: {ch?.title} (p.{ch?.pdfPage})
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LECTURE NOTES VIEW — With PDF viewer integration
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const LectureNotesView = ({ mod, highlightChapter, onClearHighlight, onOpenPDF }) => {
+  const [expandedChapter, setExpandedChapter] = useState(highlightChapter || null);
+  const [selectedText, setSelectedText] = useState("");
+  const [selectionPos, setSelectionPos] = useState(null);
+  const containerRef = useRef(null);
+  const chapterRefs = useRef({});
+
+  useEffect(() => {
+    if (highlightChapter && chapterRefs.current[highlightChapter]) {
+      setExpandedChapter(highlightChapter);
+      setTimeout(() => {
+        chapterRefs.current[highlightChapter]?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    }
+  }, [highlightChapter]);
+
+  const handleMouseUp = () => {
+    const selection = window.getSelection();
+    const text = selection?.toString().trim();
+    if (text && text.length > 10 && containerRef.current) {
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      const containerRect = containerRef.current.getBoundingClientRect();
+      setSelectedText(text);
+      setSelectionPos({ top: rect.top - containerRect.top - 48, left: Math.max(0, rect.left - containerRect.left) });
+    } else { setSelectedText(""); setSelectionPos(null); }
+  };
+
+  const handleExplain = (text, heading) => {
+    window._studysyncExplain?.(text, heading);
+    setSelectedText(""); setSelectionPos(null);
+    window.getSelection()?.removeAllRanges();
+  };
+
+  const chaptersWithNotes = mod.chapters.filter(ch => mod.lectureNotes[ch.id] && mod.lectureNotes[ch.id].length > 0);
+  const chaptersNoNotes = mod.chapters.filter(ch => !mod.lectureNotes[ch.id] || mod.lectureNotes[ch.id].length === 0);
+  const isWeak = (chId) => WEAK_TOPICS.some(w => w.course === mod.code && w.chapter === chId);
+
+  return (
+    <div className="space-y-4">
+      {/* PDF Actions Bar */}
+      <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-2xl p-5 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center">
+            <svg className="w-5 h-5 text-red-400" fill="currentColor" viewBox="0 0 20 20"><path d="M4 18h12a2 2 0 002-2V6l-4-4H4a2 2 0 00-2 2v12a2 2 0 002 2zm8-14l4 4h-4V4z"/></svg>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-white">{mod.code} Lecture Notes</p>
+            <p className="text-xs text-slate-400">{mod.pdfFile} · {mod.chapters.length} chapters</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => onOpenPDF(mod.pdfFile, `${mod.code} — Full Lecture Notes`, 1)}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition-colors">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+            Open Full PDF
+          </button>
+          <button onClick={() => alert(`Downloading ${mod.pdfFile}...`)}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-xs font-semibold text-slate-200 transition-colors">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            Download PDF
+          </button>
+        </div>
+      </div>
+
+      {/* Chapter Jump List */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4">
+        <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">📑 Jump to Chapter in PDF</h4>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {mod.chapters.map(ch => {
+            const weak = isWeak(ch.id);
+            return (
+              <button key={ch.id} onClick={() => onOpenPDF(mod.pdfFile, `${mod.code} — Ch ${ch.num}: ${ch.title}`, ch.pdfPage)}
+                className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-all hover:shadow-sm ${weak ? "border-red-200 bg-red-50 hover:bg-red-100" : "border-slate-200 bg-slate-50 hover:bg-slate-100"}`}>
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${weak ? "bg-red-200 text-red-700" : "bg-slate-200 text-slate-600"}`}>{ch.num}</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-slate-800 truncate">{ch.title}</p>
+                  <p className="text-xs text-slate-400">Page {ch.pdfPage}</p>
+                </div>
+                {weak && <Badge color="red">Weak</Badge>}
+                <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {highlightChapter && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 flex items-center justify-between">
+          <p className="text-xs text-yellow-800 font-medium">📍 Navigated to weak chapter: <strong>Ch {mod.chapters.find(c=>c.id===highlightChapter)?.num} — {mod.chapters.find(c=>c.id===highlightChapter)?.title}</strong></p>
+          <button onClick={onClearHighlight} className="text-xs text-yellow-600 hover:text-yellow-800 font-medium">Dismiss</button>
+        </div>
+      )}
+
+      <div ref={containerRef} className="relative space-y-3 select-text" onMouseUp={handleMouseUp}>
+        {selectedText && selectionPos && (
+          <div className="absolute z-30 flex gap-1.5 bg-slate-900 text-white rounded-xl px-3 py-2 shadow-xl text-xs font-medium"
+            style={{ top: `${selectionPos.top}px`, left: `${selectionPos.left}px`, transform: "translateY(-100%) translateY(-8px)" }}>
+            <button onClick={() => handleExplain(selectedText, "Selected Topic")} className="flex items-center gap-1.5 hover:text-violet-300 transition-colors"><span>🧠</span> Explain This</button>
+            <span className="text-slate-600">|</span>
+            <button onClick={() => { setSelectedText(""); setSelectionPos(null); window.getSelection()?.removeAllRanges(); }} className="hover:text-red-300">✕</button>
+          </div>
+        )}
+
+        {chaptersWithNotes.map(ch => {
+          const notes = mod.lectureNotes[ch.id];
+          const expanded = expandedChapter === ch.id;
+          const weak = isWeak(ch.id);
+          const isHighlighted = highlightChapter === ch.id;
+          return (
+            <div key={ch.id} ref={el => chapterRefs.current[ch.id] = el}
+              className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-all ${isHighlighted ? "border-yellow-400 ring-2 ring-yellow-200 highlight-section" : weak ? "border-red-200" : "border-slate-200"}`}>
+              <button onClick={() => setExpandedChapter(expanded ? null : ch.id)}
+                className="w-full flex items-center gap-3 p-4 text-left hover:bg-slate-50 transition-colors">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 ${weak ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600"}`}>
+                  {ch.num}
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                    {ch.title}
+                    {weak && <Badge color="red">Weak</Badge>}
+                    {isHighlighted && <Badge color="yellow">Focus</Badge>}
+                  </p>
+                  <p className="text-xs text-slate-400">{notes.length} section{notes.length > 1 ? "s" : ""} · Page {ch.pdfPage}</p>
+                </div>
+                <svg className={`w-5 h-5 text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+              </button>
+              {expanded && (
+                <div className="border-t border-slate-100 p-5 space-y-5">
+                  {notes.map((section, i) => (
+                    <div key={i} className="group">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <h4 className="text-sm font-semibold text-slate-800">{section.heading}</h4>
+                        <button onClick={() => handleExplain(section.content, section.heading)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity text-xs bg-violet-100 hover:bg-violet-200 text-violet-700 font-medium px-2.5 py-1 rounded-lg flex items-center gap-1 flex-shrink-0">
+                          🧠 Explain
+                        </button>
+                      </div>
+                      <p className="text-sm text-slate-600 leading-relaxed">{section.content}</p>
+                      {i < notes.length - 1 && <div className="mt-4 h-px bg-slate-100" />}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {chaptersNoNotes.length > 0 && (
+          <div className="mt-4">
+            <p className="text-xs text-slate-400 mb-2">Other chapters (notes not yet uploaded):</p>
+            <div className="space-y-2">
+              {chaptersNoNotes.map(ch => (
+                <div key={ch.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50 opacity-60">
+                  <div className="w-8 h-8 rounded-lg bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-500">{ch.num}</div>
+                  <p className="text-sm text-slate-500">{ch.title}</p>
+                  <span className="ml-auto text-xs text-slate-400">Coming soon</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TUTORIALS VIEW — No progress bars, with View/Download buttons
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const TutorialsView = ({ mod, onOpenPDF }) => (
+  <div className="space-y-4">
+    <div className="flex items-center justify-between">
+      <h3 className="text-sm font-semibold text-slate-900">📝 Tutorial Sheets</h3>
+      <p className="text-xs text-slate-400">{mod.tutorials.filter(t=>t.completed).length}/{mod.tutorials.length} completed</p>
+    </div>
+    <div className="space-y-3">
+      {mod.tutorials.map(tut => {
+        const ch = mod.chapters.find(c => c.id === tut.chapter);
+        return (
+          <div key={tut.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm flex-shrink-0 ${tut.completed ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-400"}`}>
+                  {tut.completed ? (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">{tut.title}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Ch {ch?.num}: {ch?.title} · {tut.questions} questions</p>
+                </div>
+              </div>
+              <div>
+                {tut.completed ? (
+                  <Badge color="green">Completed</Badge>
+                ) : (
+                  <Badge color="slate">Not Started</Badge>
+                )}
+              </div>
+            </div>
+            {/* Action buttons */}
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => onOpenPDF(tut.pdfFile, tut.title, 1)}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 transition-colors">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                View Sheet
+              </button>
+              <button onClick={() => alert(`Downloading ${tut.pdfFile}...`)}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 transition-colors">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                Download PDF
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+);
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SUPPORT PAGE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const SupportPage = ({ onEmailEscalate }) => (
+  <div className="max-w-4xl mx-auto space-y-6">
+    <div><h1 className="text-xl font-bold text-slate-900">✉️ Faculty Support</h1><p className="text-sm text-slate-500 mt-1">Reach out to professors and TAs for help.</p></div>
+    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+      <h2 className="text-sm font-semibold text-amber-900 mb-3">⚡ Quick Escalation</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {WEAK_TOPICS.map(topic => {
+          const faculty = FACULTY.find(f => f.course === topic.course && f.role !== "Teaching Assistant");
+          return (
+            <button key={topic.id} onClick={() => onEmailEscalate(topic.topic, topic.course, faculty?.name)}
+              className="text-left bg-white border border-amber-200 rounded-xl p-4 hover:shadow-md transition-all group">
+              <Badge color={topic.score < 50 ? "red" : "orange"}>{topic.score}%</Badge>
+              <p className="text-sm font-semibold text-slate-800 mt-2">{topic.topic}</p>
+              <p className="text-xs text-slate-500">{topic.course} · {faculty?.name}</p>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+    <div>
+      <h2 className="text-sm font-semibold text-slate-900 mb-3">👨‍🏫 Faculty Directory</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {FACULTY.map((f, i) => (
+          <div key={i} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">{f.name.split(" ").map(w=>w[0]).join("").substring(0,2)}</div>
+              <div className="flex-1"><p className="text-sm font-semibold text-slate-900">{f.name}</p><p className="text-xs text-slate-500">{f.role} · {f.course}</p><p className="text-xs text-slate-400 mt-1">🏢 {f.office} · 🕐 {f.hours}</p></div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => { const topic = WEAK_TOPICS.find(t=>t.course===f.course); onEmailEscalate(topic?.topic||"General",f.course,f.name); }} className="flex-1 py-2 rounded-xl text-xs font-semibold bg-violet-50 border border-violet-200 text-violet-700 hover:bg-violet-100">✉️ Draft Email</button>
+              <a href={`mailto:${f.email}`} className="flex-1 py-2 rounded-xl text-xs font-semibold bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100 text-center">📧 Direct</a>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// QUIZZES PAGE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const QuizzesPage = ({ onEmailEscalate }) => (
+  <div className="max-w-4xl mx-auto space-y-6">
+    <div><h1 className="text-xl font-bold text-slate-900">📝 Practice Quizzes</h1><p className="text-sm text-slate-500 mt-1">AI-generated quizzes based on your weak topics.</p></div>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      {Object.entries(QUIZ_BANK).map(([topicId, quiz]) => {
+        const weak = WEAK_TOPICS.find(t => t.id === topicId);
+        return <QuizPageCard key={topicId} topicId={topicId} quiz={quiz} weak={weak} onEmailEscalate={onEmailEscalate} />;
+      })}
+    </div>
+  </div>
+);
+
+const QuizPageCard = ({ topicId, quiz, weak, onEmailEscalate }) => {
+  const [started, setStarted] = useState(false);
+  const [selections, setSelections] = useState({});
+  const [submitted, setSubmitted] = useState(false);
+  const [score, setScore] = useState(null);
+
+  if (!started) return (
+    <div className="card-hover bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+      <div className="flex items-start justify-between mb-3"><div><h3 className="text-base font-bold text-slate-900">{quiz.topic}</h3><p className="text-xs text-slate-500">{quiz.course}</p></div>{weak && <Badge color={weak.score<50?"red":"orange"}>{weak.score}%</Badge>}</div>
+      <p className="text-xs text-slate-400 mb-4">📝 3 questions · ⏱️ ~3 min · 🎯 MCQ</p>
+      <button onClick={()=>setStarted(true)} className="w-full py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:opacity-90">Start Quiz →</button>
+    </div>
+  );
+
+  const handleSubmit = () => { let c=0; quiz.questions.forEach((q,i)=>{if(selections[i]===q.answer)c++;}); setScore(c); setSubmitted(true); };
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-gradient-to-r from-indigo-500 to-violet-600 px-5 py-3"><h3 className="text-white font-bold text-sm">{quiz.topic}</h3><p className="text-indigo-200 text-xs">{quiz.course}</p></div>
+      <div className="p-5 space-y-5">
+        {quiz.questions.map((q, qIdx) => (
+          <div key={qIdx} className="space-y-2">
+            <p className="text-sm font-medium text-slate-800">Q{qIdx+1}. {q.q}</p>
+            {q.options.map((opt, oIdx) => {
+              let cls = "quiz-option w-full text-left text-xs px-3 py-2.5 rounded-xl border cursor-pointer ";
+              if (!submitted) cls += selections[qIdx]===oIdx ? "bg-indigo-50 border-indigo-400 text-indigo-700 font-medium" : "bg-white border-slate-200 text-slate-700";
+              else if (oIdx===q.answer) cls += "bg-emerald-50 border-emerald-400 text-emerald-800 font-medium submitted";
+              else if (oIdx===selections[qIdx]) cls += "bg-red-50 border-red-300 text-red-700 submitted";
+              else cls += "bg-white border-slate-100 text-slate-400 submitted";
+              return <button key={oIdx} className={cls} onClick={()=>{if(!submitted)setSelections(p=>({...p,[qIdx]:oIdx}))}}>{String.fromCharCode(65+oIdx)}. {opt}{submitted&&oIdx===q.answer&&" ✓"}{submitted&&oIdx===selections[qIdx]&&selections[qIdx]!==q.answer&&" ✗"}</button>;
+            })}
+            {submitted && <p className="text-xs px-3 py-2 rounded-lg bg-blue-50 text-blue-700">💬 {q.explanation}</p>}
+          </div>
+        ))}
+      </div>
+      <div className="px-5 pb-5">
+        {!submitted ? <button onClick={handleSubmit} disabled={Object.keys(selections).length<3} className="w-full py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 text-white disabled:opacity-40">Submit ({Object.keys(selections).length}/3)</button>
+        : <div className="space-y-2"><div className={`text-center py-2 rounded-xl font-semibold text-sm ${score===3?"bg-emerald-100 text-emerald-700":score>=2?"bg-blue-100 text-blue-700":"bg-red-100 text-red-700"}`}>Score: {score}/3</div><div className="flex gap-2"><button onClick={()=>{setSelections({});setSubmitted(false);setScore(null);}} className="flex-1 py-2 rounded-xl text-xs font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50">↺ Retry</button>{score<3&&<button onClick={()=>onEmailEscalate(quiz.topic,quiz.course)} className="flex-1 py-2 rounded-xl text-xs font-semibold bg-amber-50 border border-amber-200 text-amber-700">✉️ Ask Prof</button>}</div></div>}
+      </div>
+    </div>
+  );
+};
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const NAV_ITEMS = [
+  { id: "dashboard", icon: "📊", label: "Dashboard" },
+  { id: "modules", icon: "📚", label: "Modules" },
+  { id: "quizzes", icon: "📝", label: "Quizzes" },
+  { id: "support", icon: "✉️", label: "Support" },
+];
+
+const Sidebar = ({ activePage, setActivePage }) => (
+  <aside className="w-52 bg-white border-r border-slate-200 flex flex-col flex-shrink-0 hidden lg:flex">
+    <div className="flex items-center gap-2.5 px-4 py-4 border-b border-slate-100">
+      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white text-sm font-bold">S</div>
+      <span className="text-base font-bold bg-gradient-to-r from-violet-700 to-indigo-600 bg-clip-text text-transparent">StudySync AI</span>
+    </div>
+    <nav className="flex-1 py-3 px-3 space-y-1">
+      {NAV_ITEMS.map(item => (
+        <button key={item.id} onClick={() => setActivePage(item.id)}
+          className={`sidebar-item w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left ${activePage === item.id || (item.id === "modules" && activePage === "module-detail") ? "active bg-indigo-50 text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>
+          <span className="text-base">{item.icon}</span><span>{item.label}</span>
+        </button>
+      ))}
+    </nav>
+    <div className="p-3 border-t border-slate-100">
+      <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-slate-50">
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold">{STUDENT.avatar}</div>
+        <div className="flex-1 min-w-0"><p className="text-xs font-semibold text-slate-800 truncate">{STUDENT.name}</p><p className="text-xs text-slate-400 truncate">{STUDENT.major}</p></div>
+      </div>
+    </div>
+  </aside>
+);
+
+const MobileNav = ({ activePage, setActivePage }) => (
+  <nav className="lg:hidden bg-white border-b border-slate-200 px-3 py-2 flex items-center gap-2 overflow-x-auto flex-shrink-0">
+    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">S</div>
+    <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1 flex-1">
+      {NAV_ITEMS.map(item => (
+        <button key={item.id} onClick={() => setActivePage(item.id)}
+          className={`flex-1 px-2 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap ${activePage === item.id || (item.id === "modules" && activePage === "module-detail") ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}>
+          {item.icon} {item.label}
+        </button>
+      ))}
+    </div>
+  </nav>
+);
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN APP — State-based routing
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const App = () => {
+  const [activePage, setActivePage] = useState("dashboard");
+  const [emailModal, setEmailModal] = useState(null);
+  const [pdfModal, setPdfModal] = useState(null);
+
+  // Module detail state
+  const [selectedModule, setSelectedModule] = useState(null);
+  const [moduleInitialTab, setModuleInitialTab] = useState(null);
+  const [moduleHighlightChapter, setModuleHighlightChapter] = useState(null);
+
+  const openEmail = (topic, course, professor) => setEmailModal({ topic, course, professor });
+  const closeEmail = () => setEmailModal(null);
+
+  const openPDF = (fileName, title, page) => setPdfModal({ fileName, title, initialPage: page || 1 });
+  const closePDF = () => setPdfModal(null);
+
+  // Navigate to a module's detail page
+  const goToModule = (code, tab, chapter) => {
+    setSelectedModule(code);
+    setModuleInitialTab(tab || "tests");
+    setModuleHighlightChapter(chapter || null);
+    setActivePage("module-detail");
+  };
+
+  // Navigate to lecture notes for a weak topic
+  const goToWeakTopicNotes = (courseCode, chapterId) => {
+    goToModule(courseCode, "notes", chapterId);
+  };
+
+  // Quiz in chat handler
+  const handleQuizInChat = (topicId, topicName) => {
+    if (window._studysyncQuizRequest) window._studysyncQuizRequest(topicId, topicName);
+  };
+
+  const renderPage = () => {
+    switch (activePage) {
+      case "dashboard":
+        return (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 max-w-5xl">
+            <StudentProfileCard />
+            <TasksCard />
+            <TimetableCard />
+            <WeakTopicsCard onQuizRequest={handleQuizInChat} onEmailEscalate={openEmail} onViewNotes={goToWeakTopicNotes} />
+          </div>
+        );
+      case "modules":
+        return <ModulesPage onSelectModule={(code) => goToModule(code, "tests", null)} />;
+      case "module-detail":
+        return <ModuleDetailPage moduleCode={selectedModule} onBack={() => setActivePage("modules")} initialTab={moduleInitialTab} highlightChapter={moduleHighlightChapter} onEmailEscalate={openEmail} onOpenPDF={openPDF} />;
+      case "quizzes":
+        return <QuizzesPage onEmailEscalate={openEmail} />;
+      case "support":
+        return <SupportPage onEmailEscalate={openEmail} />;
+      default:
+        return null;
+    }
+  };
+
+  const pageHeaders = {
+    dashboard: { title: "Dashboard", subtitle: "Your learning overview at a glance" },
+    modules: { title: "My Modules", subtitle: "Click a module to explore" },
+    "module-detail": { title: selectedModule ? `${selectedModule}: ${MODULES[selectedModule]?.name || ""}` : "Module", subtitle: "Past tests, lecture notes & tutorials" },
+    quizzes: { title: "Practice Quizzes", subtitle: "Test your knowledge on weak topics" },
+    support: { title: "Faculty Support", subtitle: "Get help from your professors" },
+  };
+
+  return (
+    <div className="h-screen flex bg-slate-50 overflow-hidden">
+      <Sidebar activePage={activePage} setActivePage={(p) => { setActivePage(p); setSelectedModule(null); setModuleHighlightChapter(null); }} />
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <MobileNav activePage={activePage} setActivePage={(p) => { setActivePage(p); setSelectedModule(null); setModuleHighlightChapter(null); }} />
+        <header className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
+          <div><h1 className="text-base font-bold text-slate-900">{pageHeaders[activePage]?.title}</h1><p className="text-xs text-slate-400">{pageHeaders[activePage]?.subtitle}</p></div>
+          <span className="text-xs text-slate-400 hidden sm:inline">Week 3, Mon · AY2025/26</span>
+        </header>
+        <div className="flex-1 flex overflow-hidden">
+          <main className="flex-1 overflow-y-auto p-5 scrollbar-thin">{renderPage()}</main>
+          <div className="w-[370px] xl:w-[400px] flex-shrink-0 p-3 pl-0 hidden md:flex"><div className="flex-1 h-full"><ChatPanel onEmailEscalate={openEmail} /></div></div>
+        </div>
+      </div>
+      {emailModal && <EmailModal topic={emailModal.topic} course={emailModal.course} professor={emailModal.professor} onClose={closeEmail} />}
+      {pdfModal && <PDFViewerModal fileName={pdfModal.fileName} title={pdfModal.title} initialPage={pdfModal.initialPage} totalPages={120} onClose={closePDF} />}
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
