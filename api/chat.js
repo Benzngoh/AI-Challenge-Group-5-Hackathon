@@ -1,10 +1,10 @@
-// Vercel Serverless Function — Google Gemini 2.5 Flash Chat Completion
+// Vercel Serverless Function — Google Gemini Chat Completion
 // Endpoint: POST /api/chat
 // Expects JSON body: { messages: [{role, content}], tools?: [...] }
 // Returns OpenAI-compatible response shape for frontend compatibility.
 
 export default async function handler(req, res) {
-  // ─── CORS Headers (allow GitHub Pages origin) ───────────────────────────────
+  // ─── CORS Headers ───────────────────────────────────────────────────────────
   const allowedOrigins = [
     "https://benzngoh.github.io",
     "http://localhost:3000",
@@ -15,21 +15,18 @@ export default async function handler(req, res) {
   if (allowedOrigins.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   } else {
-    // Fallback: allow all for development convenience
     res.setHeader("Access-Control-Allow-Origin", "*");
   }
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Access-Control-Max-Age", "86400");
 
-  // Handle preflight OPTIONS request
   if (req.method === "OPTIONS") {
     return res.status(204).end();
   }
 
-  // Only accept POST (and GET for diagnostics)
+  // ─── GET: Diagnostic — list available models ────────────────────────────────
   if (req.method === "GET") {
-    // Diagnostic: list available models to debug 404 issues
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return res.status(500).json({ error: "GEMINI_API_KEY not set" });
     try {
@@ -50,7 +47,6 @@ export default async function handler(req, res) {
   const { messages, tools } = req.body || {};
 
   if (!messages || !Array.isArray(messages)) {
-    console.error("[/api/chat] Invalid request: missing or non-array 'messages'", { body: req.body });
     return res.status(400).json({
       error: "Missing or invalid 'messages' array in request body.",
       hint: "Send a POST with JSON body: { messages: [{role, content}], tools?: [...] }",
@@ -61,31 +57,24 @@ export default async function handler(req, res) {
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    console.error("[/api/chat] GEMINI_API_KEY is not set in environment variables.");
     return res.status(500).json({
       error: "Server misconfiguration: GEMINI_API_KEY is not set.",
-      hint: "Add GEMINI_API_KEY to your Vercel project's Environment Variables (get one free at https://aistudio.google.com/app/apikey).",
+      hint: "Add GEMINI_API_KEY to your Vercel project's Environment Variables.",
     });
   }
 
-  // ─── Convert OpenAI-style messages to Gemini format ─────────────────────────
-  // Gemini expects: { contents: [{role, parts}], systemInstruction?: {parts} }
+  // ─── Convert messages to Gemini format ──────────────────────────────────────
   let systemInstruction = null;
   const contents = [];
 
   for (const msg of messages) {
     if (msg.role === "system") {
-      // Gemini uses a separate systemInstruction field
       systemInstruction = { parts: [{ text: msg.content }] };
     } else if (msg.role === "user") {
       contents.push({ role: "user", parts: [{ text: msg.content }] });
     } else if (msg.role === "assistant") {
-      // Map OpenAI "assistant" role → Gemini "model" role
       const parts = [];
-      if (msg.content) {
-        parts.push({ text: msg.content });
-      }
-      // Handle tool calls in conversation history
+      if (msg.content) parts.push({ text: msg.content });
       if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
         for (const tc of msg.tool_calls) {
           parts.push({
@@ -96,11 +85,8 @@ export default async function handler(req, res) {
           });
         }
       }
-      if (parts.length > 0) {
-        contents.push({ role: "model", parts });
-      }
+      if (parts.length > 0) contents.push({ role: "model", parts });
     } else if (msg.role === "tool") {
-      // Tool result messages → Gemini functionResponse
       contents.push({
         role: "function",
         parts: [{
@@ -113,120 +99,107 @@ export default async function handler(req, res) {
     }
   }
 
-  // ─── Convert OpenAI-style tools to Gemini functionDeclarations ──────────────
+  // Gemini requires at least one entry in contents
+  if (contents.length === 0) {
+    contents.push({ role: "user", parts: [{ text: "Hello" }] });
+  }
+
+  // ─── Convert tools to Gemini format ─────────────────────────────────────────
   let geminiTools = undefined;
   if (tools && Array.isArray(tools) && tools.length > 0) {
     const functionDeclarations = tools
       .filter(t => t.type === "function" && t.function)
       .map(t => {
         const fn = t.function;
-        const decl = {
-          name: fn.name,
-          description: fn.description || "",
-        };
-        // Convert OpenAI JSON Schema parameters to Gemini format
+        const decl = { name: fn.name, description: fn.description || "" };
         if (fn.parameters && Object.keys(fn.parameters).length > 0) {
           decl.parameters = convertSchemaForGemini(fn.parameters);
         }
         return decl;
       });
-
     if (functionDeclarations.length > 0) {
       geminiTools = [{ functionDeclarations }];
     }
   }
 
-  // ─── Build Gemini request body ──────────────────────────────────────────────
-  // Gemini requires at least one entry in contents
-  if (contents.length === 0) {
-    // If only a system message was provided, add a default user message
-    contents.push({ role: "user", parts: [{ text: "Hello" }] });
-  }
-
+  // ─── Build request body ─────────────────────────────────────────────────────
   const geminiBody = { contents };
+  if (systemInstruction) geminiBody.systemInstruction = systemInstruction;
+  if (geminiTools) geminiBody.tools = geminiTools;
+  geminiBody.generationConfig = { temperature: 0.7, topP: 0.95, maxOutputTokens: 2048 };
 
-  if (systemInstruction) {
-    geminiBody.systemInstruction = systemInstruction;
-  }
+  // ─── Try multiple models (in case some are unavailable) ─────────────────────
+  const modelsToTry = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-1.5-flash"];
 
-  if (geminiTools) {
-    geminiBody.tools = geminiTools;
-  }
-
-  // Generation config
-  geminiBody.generationConfig = {
-    temperature: 0.7,
-    topP: 0.95,
-    maxOutputTokens: 2048,
-  };
-
-  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-
-  console.log("[/api/chat] Sending request to Gemini:", {
-    model: "gemini-2.5-flash",
-    messageCount: contents.length,
-    hasSystemInstruction: !!systemInstruction,
-    toolCount: geminiTools?.[0]?.functionDeclarations?.length || 0,
-  });
+  let response = null;
+  let usedModel = "";
 
   try {
-    const response = await fetch(geminiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(geminiBody),
-    });
+    for (const modelName of modelsToTry) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+      console.log(`[/api/chat] Trying model: ${modelName}`);
 
-    // ─── Handle non-OK responses from Gemini ──────────────────────────────────
-    if (!response.ok) {
-      let errorData = {};
-      try {
-        errorData = await response.json();
-      } catch (_) {
-        errorData = { raw: await response.text().catch(() => "Unable to read error body") };
-      }
-
-      console.error("[/api/chat] Gemini API returned error:", {
-        status: response.status,
-        statusText: response.statusText,
-        errorData,
+      response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(geminiBody),
       });
 
-      return res.status(response.status).json({
-        error: `Gemini API error (${response.status}): ${response.statusText}`,
-        gemini_error: errorData?.error || errorData,
-        requested_url: geminiUrl.replace(apiKey, "***"),
-        request_body_preview: JSON.stringify(geminiBody).substring(0, 500),
-        hint: response.status === 400
-          ? "Bad request — check that your messages are properly formatted."
-          : response.status === 403
-          ? "Your GEMINI_API_KEY is invalid or the API is not enabled. Verify at https://aistudio.google.com/app/apikey."
-          : response.status === 429
-          ? "Rate limit exceeded. The free Gemini tier has per-minute limits — wait and retry."
-          : response.status === 404
-          ? "Model not found. Ensure 'gemini-2.5-flash' is available."
-          : "Check the gemini_error field for details.",
+      if (response.ok) {
+        usedModel = modelName;
+        console.log(`[/api/chat] Success with model: ${modelName}`);
+        break;
+      }
+
+      if (response.status === 404) {
+        console.log(`[/api/chat] Model ${modelName} returned 404, trying next...`);
+        response = null;
+        continue;
+      }
+
+      // Non-404 error — stop trying
+      usedModel = modelName;
+      break;
+    }
+
+    // All models returned 404
+    if (!response) {
+      return res.status(404).json({
+        error: "No working Gemini model found. All candidates returned 404.",
+        tried: modelsToTry,
+        hint: "Your API key may not have access to generateContent. Try creating a new key at https://aistudio.google.com/app/apikey",
       });
     }
 
-    // ─── Parse Gemini response ────────────────────────────────────────────────
+    // Handle non-OK response
+    if (!response.ok) {
+      let errorData = {};
+      try { errorData = await response.json(); } catch (_) { errorData = {}; }
+
+      return res.status(response.status).json({
+        error: `Gemini API error (${response.status})`,
+        gemini_error: errorData?.error || errorData,
+        model_used: usedModel,
+        hint: response.status === 400 ? "Bad request format."
+          : response.status === 403 ? "API key invalid or API not enabled."
+          : response.status === 429 ? "Rate limit exceeded — wait and retry."
+          : "Check gemini_error for details.",
+      });
+    }
+
+    // ─── Success — parse and transform response ─────────────────────────────
     const geminiData = await response.json();
+    console.log("[/api/chat] Gemini response:", { model: usedModel, finishReason: geminiData.candidates?.[0]?.finishReason });
 
-    console.log("[/api/chat] Gemini response received:", {
-      candidateCount: geminiData.candidates?.length || 0,
-      finishReason: geminiData.candidates?.[0]?.finishReason,
-    });
-
-    // ─── Transform Gemini response → OpenAI-compatible format ─────────────────
-    // Frontend expects: { choices: [{ message: { role, content, tool_calls? } }] }
-    const openaiResponse = transformGeminiToOpenAI(geminiData);
-
+    const openaiResponse = transformGeminiToOpenAI(geminiData, usedModel);
     return res.status(200).json(openaiResponse);
+
   } catch (err) {
-    console.error("[/api/chat] Unexpected server error:", err.message, err.stack);
+    console.error("[/api/chat] Server error:", err.message);
     return res.status(500).json({
-      error: "Internal server error — failed to reach Gemini API.",
+      error: "Internal server error",
       message: err.message,
-      hint: "This may be a network issue on the server. Check Vercel function logs.",
+      hint: "Check Vercel function logs for details.",
     });
   }
 }
@@ -236,54 +209,27 @@ export default async function handler(req, res) {
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Convert OpenAI JSON Schema → Gemini-compatible schema.
- * Gemini doesn't support "required" at the top level the same way,
- * but it does accept a subset of JSON Schema.
- */
 function convertSchemaForGemini(schema) {
-  // Gemini accepts: type, properties, required, items, enum, description
   const result = {};
-
   if (schema.type) result.type = schema.type.toUpperCase();
   if (schema.description) result.description = schema.description;
   if (schema.enum) result.enum = schema.enum;
-
   if (schema.properties) {
     result.properties = {};
     for (const [key, value] of Object.entries(schema.properties)) {
       result.properties[key] = convertSchemaForGemini(value);
     }
   }
-
-  if (schema.required) {
-    result.required = schema.required;
-  }
-
-  if (schema.items) {
-    result.items = convertSchemaForGemini(schema.items);
-  }
-
+  if (schema.required) result.required = schema.required;
+  if (schema.items) result.items = convertSchemaForGemini(schema.items);
   return result;
 }
 
-/**
- * Transform Gemini generateContent response → OpenAI chat completion format.
- * This allows the frontend to remain unchanged.
- */
-function transformGeminiToOpenAI(geminiData) {
+function transformGeminiToOpenAI(geminiData, modelName) {
   const candidate = geminiData.candidates?.[0];
 
   if (!candidate) {
-    return {
-      choices: [{
-        message: {
-          role: "assistant",
-          content: "No response generated.",
-        },
-        finish_reason: "stop",
-      }],
-    };
+    return { choices: [{ message: { role: "assistant", content: "No response generated." }, finish_reason: "stop" }] };
   }
 
   const parts = candidate.content?.parts || [];
@@ -291,9 +237,7 @@ function transformGeminiToOpenAI(geminiData) {
   const toolCalls = [];
 
   for (const part of parts) {
-    if (part.text) {
-      textContent += part.text;
-    }
+    if (part.text) textContent += part.text;
     if (part.functionCall) {
       toolCalls.push({
         id: `call_${Math.random().toString(36).substring(2, 11)}`,
@@ -306,33 +250,16 @@ function transformGeminiToOpenAI(geminiData) {
     }
   }
 
-  const message = {
-    role: "assistant",
-    content: textContent || null,
-  };
+  const message = { role: "assistant", content: textContent || null };
+  if (toolCalls.length > 0) message.tool_calls = toolCalls;
 
-  if (toolCalls.length > 0) {
-    message.tool_calls = toolCalls;
-  }
-
-  // Map Gemini finish reasons to OpenAI equivalents
-  const finishReasonMap = {
-    STOP: "stop",
-    MAX_TOKENS: "length",
-    SAFETY: "content_filter",
-    RECITATION: "content_filter",
-    OTHER: "stop",
-  };
+  const finishReasonMap = { STOP: "stop", MAX_TOKENS: "length", SAFETY: "content_filter", RECITATION: "content_filter" };
 
   return {
     id: `gemini-${Date.now()}`,
     object: "chat.completion",
-    model: "gemini-2.5-flash",
-    choices: [{
-      index: 0,
-      message,
-      finish_reason: finishReasonMap[candidate.finishReason] || "stop",
-    }],
+    model: modelName || "gemini-2.5-flash",
+    choices: [{ index: 0, message, finish_reason: finishReasonMap[candidate.finishReason] || "stop" }],
     usage: geminiData.usageMetadata ? {
       prompt_tokens: geminiData.usageMetadata.promptTokenCount || 0,
       completion_tokens: geminiData.usageMetadata.candidatesTokenCount || 0,
