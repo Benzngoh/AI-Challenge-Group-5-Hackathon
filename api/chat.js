@@ -39,6 +39,13 @@ RULES:
 - ALWAYS include specific numbers, module codes, and topic names from the student context above
 - For questions about weak topics, grades, or performance: cite exact percentages and module codes
 - Keep replyText concise (2-4 sentences max), factual, and directly useful
+- FORMAT replyText using Markdown for readability:
+  - Use bullet points (• prefix) when listing multiple items (e.g. weak topics, tasks, modules)
+  - Use **bold** for topic names and module codes
+  - Add a blank line between the intro sentence and the bullet list
+  - End with a short actionable suggestion sentence after the list
+- Example format for listing weak topics:
+  "Here are your current AI-identified weak topics:\n\n• **State Machines** (CG1111A) — 42% (Declining)\n• **Process Synchronisation** (CS2106) — 48% (Stable)\n• **Vector Math & Dot Products** (MA1508E) — 55% (Improving)\n\nFocusing on these will help boost your overall module averages!"
 
 Given a user message, classify it into one of the following actions and return structured JSON.
 
@@ -121,7 +128,7 @@ Return ONLY valid JSON with ALL of these fields:
   "moduleGrades": array of objects { "code": "MODULE_CODE", "pct": integer 0-100 } for each module,
   "strengths": array of 4 objects { "text": "description of strength", "module": "MODULE_CODE where demonstrated" },
   "weaknesses": array of 2-4 objects { "text": "description of weakness", "severity": "high" or "medium", "affects": "MODULE_CODE" },
-  "actionables": array of 4 objects { "label": "short CTA label", "icon": emoji, "type": one of "navigate"|"quiz"|"email", "target": depends on type — for "navigate": module code string, for "quiz": topic-id string (one of "state-machines","vector-math","process-sync"), for "email": { "topic": string, "course": module code } },
+  "actionables": array of 4-5 objects { "label": "short title", "subtitle": "descriptive sentence about this action", "icon": emoji, "type": one of "navigate"|"quiz"|"email"|"info", "target": depends on type — for "navigate": module code string, for "quiz": topic-id string (one of "state-machines","vector-math","process-sync"), for "email": { "topic": string, "course": module code }, for "info": null, "dotColor": one of "purple"|"blue"|"teal"|"orange"|"slate", "cta": short CTA button text (only for navigate/quiz/email types, omit for info) },
   "narrativeSummary": a 3-sentence narrative of the student's progress trajectory, key patterns, and recommended strategy
 }
 
