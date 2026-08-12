@@ -679,30 +679,293 @@ const QuizCard = ({ topicId, onEmailEscalate }) => {
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CHAT PANEL (persistent right side)
+// NLP CHATBOT — API ENDPOINT, TOOLS & ACTION DISPATCHER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const CHAT_API_URL = "https://ai-challenge-group-5-hackathon.vercel.app/api/chat";
+
+// Tool definitions for OpenAI function calling — enables the chatbot to trigger
+// dashboard views/filters automatically based on conversational intent.
+const CHATBOT_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "navigate_to_page",
+      description: "Navigate the student dashboard to a specific page or view (e.g. dashboard, modules, quizzes, ccas, support).",
+      parameters: {
+        type: "object",
+        properties: {
+          page: { type: "string", enum: ["dashboard", "modules", "quizzes", "ccas", "support"], description: "The page to navigate to." }
+        },
+        required: ["page"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "open_module_detail",
+      description: "Open a specific module's detail page with optional tab and chapter highlight.",
+      parameters: {
+        type: "object",
+        properties: {
+          moduleCode: { type: "string", enum: ["CG1111A", "CS2106", "MA1508E", "GEA1000"], description: "The module code." },
+          tab: { type: "string", enum: ["tests", "notes", "tutorials"], description: "Which tab to open." },
+          chapter: { type: "string", description: "Chapter id to highlight e.g. 'ch3'." }
+        },
+        required: ["moduleCode"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "show_overdue_tasks",
+      description: "Highlight or filter to show only overdue tasks on the dashboard.",
+      parameters: { type: "object", properties: {}, required: [] }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "start_quiz",
+      description: "Start a practice quiz for a specific weak topic.",
+      parameters: {
+        type: "object",
+        properties: {
+          topicId: { type: "string", enum: ["state-machines", "vector-math", "process-sync"], description: "The weak topic identifier." }
+        },
+        required: ["topicId"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "open_weekly_timetable",
+      description: "Open the full weekly timetable modal.",
+      parameters: { type: "object", properties: {}, required: [] }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "email_professor",
+      description: "Draft an email to a professor about a specific topic.",
+      parameters: {
+        type: "object",
+        properties: {
+          topic: { type: "string", description: "The topic to ask about." },
+          course: { type: "string", description: "The course code." }
+        },
+        required: ["topic", "course"]
+      }
+    }
+  }
+];
+
+// Central action dispatcher — executes function calls returned by the AI model.
+// `dispatchActions` is set on window by the StudentDashboard so the ChatPanel
+// can trigger navigation/UI changes.
+const actionDispatcher = (functionName, args) => {
+  if (window._studysyncDispatch) {
+    window._studysyncDispatch(functionName, args);
+  }
+};
+
+// Helper: call the serverless chat API
+const callChatAPI = async (messages, tools) => {
+  try {
+    const res = await fetch(CHAT_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages, tools }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `API error ${res.status}`);
+    }
+    return await res.json();
+  } catch (e) {
+    console.error("Chat API error:", e);
+    return null;
+  }
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STUDENT PERSONA NARRATIVE SUMMARY CARD
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const PersonaSummaryCard = () => {
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    // Build a system prompt that synthesises the student's metrics
+    const studentMetrics = {
+      name: STUDENT.name,
+      major: STUDENT.major,
+      gpa: STUDENT.gpa,
+      modules: Object.values(MODULES).map(m => {
+        const latestTest = m.pastTests[0];
+        const score = latestTest ? Math.round(latestTest.totalScore / latestTest.maxScore * 100) : null;
+        return { code: m.code, name: m.name, lastTestScore: score };
+      }),
+      weakTopics: WEAK_TOPICS.map(t => ({ topic: t.topic, course: t.course, score: t.score, trend: t.trend })),
+      tasks: { overdue: TASKS.filter(t => t.status === "overdue").length, dueSoon: TASKS.filter(t => t.status === "due-soon").length, total: TASKS.length }
+    };
+
+    const systemPrompt = `You are an academic advisor AI. Given the following student metrics in JSON, write a concise qualitative persona narrative (3-4 sentences max). Highlight the student's strengths, weaknesses across modules, and suggest 2-3 concrete next steps. Be encouraging but honest. Do NOT use bullet points — write in flowing paragraph form.\n\nStudent Metrics:\n${JSON.stringify(studentMetrics, null, 2)}`;
+
+    const fetchSummary = async () => {
+      const data = await callChatAPI(
+        [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: "Generate the student persona narrative summary." }
+        ],
+        [] // no tools needed for this call
+      );
+
+      if (data && data.choices && data.choices[0]) {
+        setSummary(data.choices[0].message.content);
+      } else {
+        setError("Unable to generate summary. Please check API configuration.");
+      }
+      setLoading(false);
+    };
+
+    fetchSummary();
+  }, []);
+
+  return (
+    <div className="card-hover bg-white rounded-2xl border border-slate-200 p-5 shadow-sm xl:col-span-2">
+      <h3 className="font-semibold text-slate-900 text-sm flex items-center gap-2 mb-3">
+        🧠 Student Persona Summary
+        <span className="ml-auto text-xs text-slate-400 font-normal">AI-Generated</span>
+      </h3>
+      {loading && (
+        <div className="flex items-center gap-3 py-4">
+          <div className="flex gap-1.5">
+            {[0, 150, 300].map(d => <span key={d} className="w-2 h-2 bg-indigo-400 rounded-full pulse-dot" style={{ animationDelay: `${d}ms` }} />)}
+          </div>
+          <span className="text-xs text-slate-400">Generating your academic profile...</span>
+        </div>
+      )}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+          <p className="text-xs text-red-700">{error}</p>
+        </div>
+      )}
+      {summary && (
+        <div className="bg-gradient-to-r from-violet-50 to-indigo-50 border border-violet-100 rounded-xl px-4 py-4">
+          <p className="text-sm text-slate-700 leading-relaxed">{summary}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CHAT PANEL (persistent right side) — NLP-powered via serverless endpoint
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const ChatPanel = ({ onEmailEscalate }) => {
-  const [messages, setMessages] = useState([{ id: 1, role: "ai", type: "text", text: "Hi Alex! 👋 I'm your **StudySync AI** copilot.\n\n• **Explain concepts** — highlight text in Lecture Notes\n• **Practice quizzes** — test your weak topics\n• **Email professors** — one-click escalation\n\nAsk me anything!" }]);
+  const [messages, setMessages] = useState([{ id: 1, role: "ai", type: "text", text: "Hi Alex! 👋 I'm your **StudySync AI** copilot.\n\n• **Explain concepts** — highlight text in Lecture Notes\n• **Practice quizzes** — test your weak topics\n• **Navigate anywhere** — just tell me what you want to see\n• **Email professors** — one-click escalation\n\nAsk me anything!" }]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [conversationHistory, setConversationHistory] = useState([
+    { role: "system", content: "You are StudySync AI, a helpful academic assistant for a Computer Engineering student named Alex Chen at NUS. You help with navigating the dashboard, starting quizzes, viewing modules, checking tasks, and explaining academic concepts. When the user wants to navigate somewhere or take an action, use the provided tool functions. Keep responses concise and friendly. Use markdown bold for emphasis." }
+  ]);
   const endRef = useRef(null);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
   const add = (msg) => setMessages(p => [...p, { id: Date.now()+Math.random(), ...msg }]);
-  const typing = (cb, d=900) => { setIsTyping(true); setTimeout(() => { setIsTyping(false); cb(); }, d); };
-  const handleExplain = useCallback((text, topic) => { add({ role: "user", type: "text", text: `Explain: "${text.substring(0,50)}..."` }); typing(() => { add({ role: "ai", type: "text", text: AI_RESPONSES.explain(topic, text) }); add({ role: "ai", type: "escalate-prompt", topic, course: "CG1111A" }); }, 1000); }, []);
-  const handleQuizRequest = useCallback((topicId, topicName) => { add({ role: "user", type: "text", text: `Quiz me on: ${topicName}` }); typing(() => { add({ role: "ai", type: "text", text: AI_RESPONSES.quiz_intro(topicName) }); add({ role: "ai", type: "quiz", topicId }); }, 800); }, []);
-  const handleSend = () => {
+
+  const handleExplain = useCallback((text, topic) => { add({ role: "user", type: "text", text: `Explain: "${text.substring(0,50)}..."` }); setIsTyping(true); setTimeout(() => { setIsTyping(false); add({ role: "ai", type: "text", text: AI_RESPONSES.explain(topic, text) }); add({ role: "ai", type: "escalate-prompt", topic, course: "CG1111A" }); }, 1000); }, []);
+  const handleQuizRequest = useCallback((topicId, topicName) => { add({ role: "user", type: "text", text: `Quiz me on: ${topicName}` }); setIsTyping(true); setTimeout(() => { setIsTyping(false); add({ role: "ai", type: "text", text: AI_RESPONSES.quiz_intro(topicName) }); add({ role: "ai", type: "quiz", topicId }); }, 800); }, []);
+
+  const handleSend = async () => {
     const t = input.trim(); if (!t) return;
     add({ role: "user", type: "text", text: t }); setInput("");
-    const lower = t.toLowerCase();
-    typing(() => {
-      if (lower.includes("quiz") || lower.includes("practice")) { add({ role: "ai", type: "text", text: "Which topic? Pick one:" }); add({ role: "ai", type: "quiz-picker" }); }
-      else if (lower.includes("explain") || lower.includes("what is")) { add({ role: "ai", type: "text", text: "Highlight text in **Lecture Notes** and click **Explain This**, or go to a module's notes page!" }); }
-      else if (lower.includes("email") || lower.includes("prof")) { add({ role: "ai", type: "escalate-prompt", topic: "State Machines", course: "CG1111A" }); }
-      else { add({ role: "ai", type: "text", text: `I can help with that! Try:\n• Highlighting lecture notes → "Explain This"\n• Opening a module → Past Tests to see weak chapters\n• Asking me: *"Quiz me on State Machines"*` }); }
-    });
+    setIsTyping(true);
+
+    // Build updated conversation for the API
+    const updatedHistory = [...conversationHistory, { role: "user", content: t }];
+    setConversationHistory(updatedHistory);
+
+    try {
+      const data = await callChatAPI(updatedHistory, CHATBOT_TOOLS);
+
+      if (!data || !data.choices || !data.choices[0]) {
+        // Fallback to local logic if API fails
+        setIsTyping(false);
+        const lower = t.toLowerCase();
+        if (lower.includes("quiz") || lower.includes("practice")) { add({ role: "ai", type: "text", text: "Which topic? Pick one:" }); add({ role: "ai", type: "quiz-picker" }); }
+        else if (lower.includes("explain") || lower.includes("what is")) { add({ role: "ai", type: "text", text: "Highlight text in **Lecture Notes** and click **Explain This**, or go to a module's notes page!" }); }
+        else if (lower.includes("email") || lower.includes("prof")) { add({ role: "ai", type: "escalate-prompt", topic: "State Machines", course: "CG1111A" }); }
+        else { add({ role: "ai", type: "text", text: `I can help with that! Try:\n• Highlighting lecture notes → "Explain This"\n• Opening a module → Past Tests to see weak chapters\n• Asking me: *"Quiz me on State Machines"*` }); }
+        return;
+      }
+
+      const choice = data.choices[0];
+      const assistantMessage = choice.message;
+
+      // Add assistant message to conversation history
+      setConversationHistory(prev => [...prev, assistantMessage]);
+
+      // Handle tool calls (function calling)
+      if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
+        for (const toolCall of assistantMessage.tool_calls) {
+          const fnName = toolCall.function.name;
+          const fnArgs = JSON.parse(toolCall.function.arguments || "{}");
+
+          // Dispatch the action in the UI
+          actionDispatcher(fnName, fnArgs);
+
+          // Provide feedback in chat
+          const actionDescriptions = {
+            navigate_to_page: `Navigating to **${fnArgs.page}** page...`,
+            open_module_detail: `Opening **${fnArgs.moduleCode}**${fnArgs.tab ? ` (${fnArgs.tab})` : ""}...`,
+            show_overdue_tasks: "Showing your **overdue tasks** on the dashboard...",
+            start_quiz: `Starting quiz on **${WEAK_TOPICS.find(w => w.id === fnArgs.topicId)?.topic || fnArgs.topicId}**...`,
+            open_weekly_timetable: "Opening your **weekly timetable**...",
+            email_professor: `Drafting email about **${fnArgs.topic}** for ${fnArgs.course}...`,
+          };
+          const actionText = actionDescriptions[fnName] || `Executing: ${fnName}`;
+
+          // If there's also a text response from the model, show it
+          if (assistantMessage.content) {
+            add({ role: "ai", type: "text", text: assistantMessage.content });
+          }
+          add({ role: "ai", type: "text", text: `✅ ${actionText}` });
+
+          // Special: if it was start_quiz, also show the quiz card
+          if (fnName === "start_quiz" && fnArgs.topicId) {
+            const topic = WEAK_TOPICS.find(w => w.id === fnArgs.topicId);
+            if (topic) {
+              add({ role: "ai", type: "quiz", topicId: fnArgs.topicId });
+            }
+          }
+          // Special: if it was email_professor, trigger the email modal
+          if (fnName === "email_professor") {
+            onEmailEscalate(fnArgs.topic, fnArgs.course);
+          }
+        }
+      } else {
+        // Normal text response — no tool calls
+        const text = assistantMessage.content || "I'm not sure how to help with that. Try asking about your modules, tasks, or quizzes!";
+        add({ role: "ai", type: "text", text });
+      }
+    } catch (err) {
+      console.error("Chat error:", err);
+      add({ role: "ai", type: "text", text: "Sorry, I encountered an error. Please try again!" });
+    } finally {
+      setIsTyping(false);
+    }
   };
+
   window._studysyncExplain = handleExplain;
   window._studysyncQuizRequest = handleQuizRequest;
 
@@ -767,7 +1030,7 @@ const StudentProfileCard = () => (
 const TasksCard = () => {
   const cfg = { overdue: { color: "text-red-600", bg: "bg-red-50 border-red-200", dot: "bg-red-400", label: "Overdue" }, "due-soon": { color: "text-orange-600", bg: "bg-orange-50 border-orange-200", dot: "bg-orange-400", label: "Due Soon" }, upcoming: { color: "text-slate-500", bg: "bg-slate-50 border-slate-200", dot: "bg-slate-300", label: "Upcoming" } };
   return (
-    <div className="card-hover bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+    <div data-tasks-card className="card-hover bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
       <h3 className="font-semibold text-slate-900 text-sm flex items-center gap-2 mb-3">📋 Tasks <Badge color="red">{TASKS.filter(t=>t.status==="overdue").length} Overdue</Badge></h3>
       <div className="space-y-2">{TASKS.map(task=>{const c=cfg[task.status];return <div key={task.id} className={`flex items-center gap-3 p-2.5 rounded-xl border ${c.bg}`}><span className={`w-2 h-2 rounded-full ${c.dot} flex-shrink-0`}/><div className="flex-1 min-w-0"><p className="text-xs font-medium text-slate-800 truncate">{task.title}</p><p className="text-xs text-slate-400">{task.course} · <span className={c.color}>{c.label}</span></p></div></div>;})}</div>
     </div>
@@ -2239,6 +2502,41 @@ const StudentDashboard = ({ onLogout }) => {
 
   const goToCCA = (ccaId) => { setSelectedCCA(ccaId); setActivePage("cca-detail"); };
 
+  // ─── Action Dispatcher — exposed on window for the ChatPanel to trigger UI actions ───
+  useEffect(() => {
+    window._studysyncDispatch = (functionName, args) => {
+      switch (functionName) {
+        case "navigate_to_page":
+          setActivePage(args.page);
+          break;
+        case "open_module_detail":
+          goToModule(args.moduleCode, args.tab || "tests", args.chapter || null);
+          break;
+        case "show_overdue_tasks":
+          setActivePage("dashboard");
+          // Scroll to tasks after a brief delay for render
+          setTimeout(() => { document.querySelector('[data-tasks-card]')?.scrollIntoView({ behavior: "smooth" }); }, 200);
+          break;
+        case "start_quiz":
+          if (args.topicId && window._studysyncQuizRequest) {
+            const topic = WEAK_TOPICS.find(w => w.id === args.topicId);
+            if (topic) window._studysyncQuizRequest(args.topicId, topic.topic);
+          }
+          break;
+        case "open_weekly_timetable":
+          setWeeklyModal(true);
+          break;
+        case "email_professor":
+          openEmail(args.topic, args.course, args.professor);
+          break;
+        default:
+          console.warn("Unknown dispatch action:", functionName, args);
+      }
+    };
+    return () => { delete window._studysyncDispatch; };
+  }, []);
+
+
   const renderPage = () => {
     switch (activePage) {
       case "dashboard": return (
@@ -2247,6 +2545,7 @@ const StudentDashboard = ({ onLogout }) => {
           <TasksCard />
           <TimetableCard onOpenWeekly={() => setWeeklyModal(true)} />
           <WeakTopicsCard onQuizRequest={handleQuizInChat} onEmailEscalate={openEmail} onViewNotes={goToWeakTopicNotes} />
+          <PersonaSummaryCard />
         </div>
       );
       case "modules": return <ModulesPage onSelectModule={(code) => goToModule(code, "tests", null)} />;
