@@ -1,4 +1,4 @@
-// Vercel Serverless Function — Google Gemini 1.5 Flash Latest Chat Completion
+// Vercel Serverless Function — Google Gemini 2.0 Flash Chat Completion
 // Endpoint: POST /api/chat
 // Expects JSON body: { messages: [{role, content}], tools?: [...] }
 // Returns OpenAI-compatible response shape for frontend compatibility.
@@ -140,10 +140,10 @@ export default async function handler(req, res) {
     maxOutputTokens: 2048,
   };
 
-  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
   console.log("[/api/chat] Sending request to Gemini:", {
-    model: "gemini-1.5-flash-latest",
+    model: "gemini-2.0-flash",
     messageCount: contents.length,
     hasSystemInstruction: !!systemInstruction,
     toolCount: geminiTools?.[0]?.functionDeclarations?.length || 0,
@@ -181,7 +181,7 @@ export default async function handler(req, res) {
           : response.status === 429
           ? "Rate limit exceeded. The free Gemini tier has per-minute limits — wait and retry."
           : response.status === 404
-          ? "Model not found. Ensure 'gemini-1.5-flash-latest' is available."
+          ? "Model not found. Ensure 'gemini-2.0-flash' is available."
           : "Check the gemini_error field for details.",
       });
     }
@@ -305,7 +305,7 @@ function transformGeminiToOpenAI(geminiData) {
   return {
     id: `gemini-${Date.now()}`,
     object: "chat.completion",
-    model: "gemini-1.5-flash-latest",
+    model: "gemini-2.0-flash",
     choices: [{
       index: 0,
       message,
