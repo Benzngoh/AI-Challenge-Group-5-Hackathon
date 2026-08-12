@@ -33,7 +33,7 @@ export default async function handler(req, res) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return res.status(500).json({ error: "GEMINI_API_KEY not set" });
     try {
-      const listRes = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`);
+      const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
       const listData = await listRes.json();
       const modelNames = (listData.models || []).map(m => m.name).filter(n => n.includes("flash") || n.includes("pro"));
       return res.status(200).json({ available_models: modelNames, hint: "Use one of these model names (after 'models/') in the generateContent URL." });
@@ -160,7 +160,7 @@ export default async function handler(req, res) {
     maxOutputTokens: 2048,
   };
 
-  const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
   console.log("[/api/chat] Sending request to Gemini:", {
     model: "gemini-2.5-flash",
@@ -194,6 +194,8 @@ export default async function handler(req, res) {
       return res.status(response.status).json({
         error: `Gemini API error (${response.status}): ${response.statusText}`,
         gemini_error: errorData?.error || errorData,
+        requested_url: geminiUrl.replace(apiKey, "***"),
+        request_body_preview: JSON.stringify(geminiBody).substring(0, 500),
         hint: response.status === 400
           ? "Bad request — check that your messages are properly formatted."
           : response.status === 403
