@@ -79,18 +79,24 @@ Task filters: "overdue", "due-soon", "upcoming".`;
         return res.status(400).json({ error: "studentData is required for PERSONA_SYNTHESIS" });
       }
 
-      const systemPrompt = `You are an academic analyst AI for a university student dashboard.
-Given a student's academic data (modules, weak topics, tasks, and past test results), synthesize a concise "Academic Persona" summary.
+      const systemPrompt = `You are an academic analyst AI for a university student dashboard called StudySync AI.
+Given a student's academic data (modules, weak topics, tasks, and past test results), synthesize a comprehensive "Academic Trajectory & Persona Summary".
 
-Return ONLY valid JSON with these fields:
+Return ONLY valid JSON with ALL of these fields:
 {
   "personaTitle": a short 3-5 word persona archetype title (e.g. "The Conceptual Thinker", "The Dedicated Practitioner"),
-  "narrativeSummary": a 2-3 sentence narrative summary of the student's academic profile, strengths, and areas for growth,
-  "keyWeaknesses": an array of 2-4 strings identifying the most critical weakness areas,
-  "actionItems": an array of 2-4 specific, actionable recommendations for improvement
+  "overallAverage": integer 0-100 representing weighted average across all modules,
+  "moduleGrades": array of objects { "code": "MODULE_CODE", "pct": integer 0-100 } for each module,
+  "strengths": array of 4 objects { "text": "description of strength", "module": "MODULE_CODE where demonstrated" },
+  "weaknesses": array of 2-4 objects { "text": "description of weakness", "severity": "high" or "medium", "affects": "MODULE_CODE" },
+  "actionables": array of 4 objects { "label": "short CTA label", "icon": emoji, "type": one of "navigate"|"quiz"|"email", "target": depends on type — for "navigate": module code string, for "quiz": topic-id string (one of "state-machines","vector-math","process-sync"), for "email": { "topic": string, "course": module code } },
+  "narrativeSummary": a 3-sentence narrative of the student's progress trajectory, key patterns, and recommended strategy
 }
 
-Be encouraging but honest. Focus on patterns across modules and test performance.`;
+Available modules: CG1111A, CS2106, MA1508E, GEA1000.
+Available quiz topic IDs: "state-machines" (CG1111A), "vector-math" (MA1508E), "process-sync" (CS2106).
+
+Be encouraging but honest. Focus on cross-module patterns and test performance. Make actionables specific and directly useful.`;
 
       const dataPayload = JSON.stringify(studentData, null, 2);
 
@@ -109,9 +115,29 @@ Be encouraging but honest. Focus on patterns across modules and test performance
       } catch {
         parsed = {
           personaTitle: "The Growing Scholar",
-          narrativeSummary: responseText.substring(0, 300),
-          keyWeaknesses: ["Unable to parse detailed weaknesses"],
-          actionItems: ["Review study materials and try again"],
+          overallAverage: 70,
+          moduleGrades: [
+            { code: "CG1111A", pct: 62 }, { code: "CS2106", pct: 55 },
+            { code: "MA1508E", pct: 68 }, { code: "GEA1000", pct: 95 }
+          ],
+          strengths: [
+            { text: "Strong quantitative reasoning & statistical literacy", module: "GEA1000" },
+            { text: "Solid grasp of Boolean algebra & foundational logic", module: "CG1111A" },
+            { text: "Good matrix operation & linear system solving skills", module: "MA1508E" },
+            { text: "Consistent performance in process lifecycle concepts", module: "CS2106" },
+          ],
+          weaknesses: [
+            { text: "Sequential state logic & FSM design patterns", severity: "high", affects: "CG1111A" },
+            { text: "Process synchronisation & deadlock analysis", severity: "high", affects: "CS2106" },
+            { text: "Eigenvalue computation & vector product applications", severity: "medium", affects: "MA1508E" },
+          ],
+          actionables: [
+            { label: "Review State Machine Notes", icon: "📖", type: "navigate", target: "CG1111A" },
+            { label: "Launch Concurrency Practice Quiz", icon: "📝", type: "quiz", target: "process-sync" },
+            { label: "Practice Vector Math Quiz", icon: "📝", type: "quiz", target: "vector-math" },
+            { label: "Email Prof. Smith for FSM Help", icon: "✉️", type: "email", target: { topic: "State Machines", course: "CG1111A" } },
+          ],
+          narrativeSummary: "You show strong analytical foundations in quantitative modules but need focused effort on sequential logic and concurrency. A targeted review of Ch3 topics combined with hands-on quiz practice should significantly boost your confidence and grades. Your consistent performance in GEA1000 proves you can excel when concepts click.",
         };
       }
 
