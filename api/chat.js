@@ -26,6 +26,27 @@ module.exports = async function handler(req, res) {
       }
 
       const systemPrompt = `You are an intent router for a student dashboard app called StudySync AI.
+You have access to the student's academic data. Use it to give SPECIFIC, DATA-DRIVEN responses.
+
+STUDENT CONTEXT (use this data in your responses):
+- Weak Topics: State Machines (CG1111A) at 42%, Vector Math & Dot Products (MA1508E) at 55%, Process Synchronisation (CS2106) at 48%
+- Modules: CG1111A (62%), CS2106 (55%), MA1508E (68%), GEA1000 (95%)
+- Overdue Tasks: 1 (Lab Report: Logic Gate Simulation — CG1111A)
+- Due Soon: 1 (Problem Set 4 — K-Maps — CG1111A)
+
+RULES:
+- NEVER use generic filler like "I can help you identify..." or "Let me assist you with..."
+- ALWAYS include specific numbers, module codes, and topic names from the student context above
+- For questions about weak topics, grades, or performance: cite exact percentages and module codes
+- Keep replyText concise (2-4 sentences max), factual, and directly useful
+- FORMAT replyText using Markdown for readability:
+  - Use bullet points (• prefix) when listing multiple items (e.g. weak topics, tasks, modules)
+  - Use **bold** for topic names and module codes
+  - Add a blank line between the intro sentence and the bullet list
+  - End with a short actionable suggestion sentence after the list
+- Example format for listing weak topics:
+  "Here are your current AI-identified weak topics:\n\n• **State Machines** (CG1111A) — 42% (Declining)\n• **Process Synchronisation** (CS2106) — 48% (Stable)\n• **Vector Math & Dot Products** (MA1508E) — 55% (Improving)\n\nFocusing on these will help boost your overall module averages!"
+
 Given a user message, classify it into one of the following actions and return structured JSON.
 
 Actions:
@@ -39,11 +60,19 @@ Return ONLY valid JSON with these fields:
   "action": one of "LIST_TASKS" | "NAVIGATE_MODULE" | "GENERATE_QUIZ" | "CHAT_RESPONSE",
   "filter": relevant filter string (e.g. "overdue", "due-soon", "upcoming", or null),
   "targetModule": module code if NAVIGATE_MODULE (e.g. "CG1111A", "CS2106", "MA1508E", "GEA1000") or null,
-  "replyText": a short friendly reply text to show the user (1-2 sentences)
+  "replyText": a short data-driven reply (2-4 sentences with specific numbers/topics from context),
+  "quickActions": array of 1-4 clickable action chips the user can tap, each object: { "label": "short button text", "icon": "emoji", "type": one of "notes"|"quiz"|"email", "target": string }
 }
 
+quickActions rules:
+- type "notes": target is a module code (e.g. "CG1111A"). Label format: "📖 Notes: [Topic]"
+- type "quiz": target is a quiz topic-id (one of "state-machines", "vector-math", "process-sync"). Label format: "📝 Quiz: [Topic]"
+- type "email": target is a module code. Label format: "✉️ Email: [Prof Name]"
+- Include 2-4 relevant quickActions for CHAT_RESPONSE, 1-2 for other action types
+- Always pick actions relevant to the conversation topic
+
 Available modules: CG1111A (Engineering Principles & Practice), CS2106 (Operating Systems), MA1508E (Linear Algebra), GEA1000 (Quantitative Reasoning).
-Available quiz topics: "state-machines" (CG1111A), "vector-math" (MA1508E), "process-sync" (CS2106).
+Available quiz topic-ids: "state-machines" (CG1111A), "vector-math" (MA1508E), "process-sync" (CS2106).
 Task filters: "overdue", "due-soon", "upcoming".`;
 
       const result = await model.generateContent({
@@ -65,7 +94,17 @@ Task filters: "overdue", "due-soon", "upcoming".`;
           filter: null,
           targetModule: null,
           replyText: responseText.substring(0, 200),
+          quickActions: [
+            { label: "📖 Notes: State Machines", icon: "📖", type: "notes", target: "CG1111A" },
+            { label: "📝 Quiz: Vector Math", icon: "📝", type: "quiz", target: "vector-math" },
+            { label: "✉️ Email: Prof. Smith", icon: "✉️", type: "email", target: "CG1111A" },
+          ],
         };
+      }
+
+      // Ensure quickActions always exists
+      if (!parsed.quickActions) {
+        parsed.quickActions = [];
       }
 
       return res.status(200).json(parsed);
@@ -89,7 +128,7 @@ Return ONLY valid JSON with ALL of these fields:
   "moduleGrades": array of objects { "code": "MODULE_CODE", "pct": integer 0-100 } for each module,
   "strengths": array of 4 objects { "text": "description of strength", "module": "MODULE_CODE where demonstrated" },
   "weaknesses": array of 2-4 objects { "text": "description of weakness", "severity": "high" or "medium", "affects": "MODULE_CODE" },
-  "actionables": array of 4 objects { "label": "short CTA label", "icon": emoji, "type": one of "navigate"|"quiz"|"email", "target": depends on type — for "navigate": module code string, for "quiz": topic-id string (one of "state-machines","vector-math","process-sync"), for "email": { "topic": string, "course": module code } },
+  "actionables": array of 4-5 objects { "label": "short title", "subtitle": "descriptive sentence about this action", "icon": emoji, "type": one of "navigate"|"quiz"|"email"|"info", "target": depends on type — for "navigate": module code string, for "quiz": topic-id string (one of "state-machines","vector-math","process-sync"), for "email": { "topic": string, "course": module code }, for "info": null, "dotColor": one of "purple"|"blue"|"teal"|"orange"|"slate", "cta": short CTA button text (only for navigate/quiz/email types, omit for info) },
   "narrativeSummary": a 3-sentence narrative of the student's progress trajectory, key patterns, and recommended strategy
 }
 
@@ -132,10 +171,10 @@ Be encouraging but honest. Focus on cross-module patterns and test performance. 
             { text: "Eigenvalue computation & vector product applications", severity: "medium", affects: "MA1508E" },
           ],
           actionables: [
-            { label: "Review State Machine Notes", icon: "📖", type: "navigate", target: "CG1111A" },
-            { label: "Launch Concurrency Practice Quiz", icon: "📝", type: "quiz", target: "process-sync" },
-            { label: "Practice Vector Math Quiz", icon: "📝", type: "quiz", target: "vector-math" },
-            { label: "Email Prof. Smith for FSM Help", icon: "✉️", type: "email", target: { topic: "State Machines", course: "CG1111A" } },
+            { label: "Review State Machine Notes", subtitle: "Revisit Ch3 FSM concepts — your weakest area at 42%", icon: "📖", type: "navigate", target: "CG1111A", dotColor: "purple", cta: "📖 Review Notes" },
+            { label: "Launch Concurrency Practice Quiz", subtitle: "Test your process synchronisation knowledge at 48%", icon: "📝", type: "quiz", target: "process-sync", dotColor: "blue", cta: "📝 Practice Quiz" },
+            { label: "Practice Vector Math Quiz", subtitle: "Strengthen dot/cross product skills — currently at 55%", icon: "📝", type: "quiz", target: "vector-math", dotColor: "teal", cta: "📝 Practice Quiz" },
+            { label: "Email Prof. Smith for FSM Help", subtitle: "Book office hours for State Machine guidance", icon: "✉️", type: "email", target: { topic: "State Machines", course: "CG1111A" }, dotColor: "orange", cta: "✉️ Email Prof" },
           ],
           narrativeSummary: "You show strong analytical foundations in quantitative modules but need focused effort on sequential logic and concurrency. A targeted review of Ch3 topics combined with hands-on quiz practice should significantly boost your confidence and grades. Your consistent performance in GEA1000 proves you can excel when concepts click.",
         };
