@@ -33,7 +33,7 @@ export default async function handler(req, res) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return res.status(500).json({ error: "GEMINI_API_KEY not set" });
     try {
-      const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+      const listRes = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`);
       const listData = await listRes.json();
       const modelNames = (listData.models || []).map(m => m.name).filter(n => n.includes("flash") || n.includes("pro"));
       return res.status(200).json({ available_models: modelNames, hint: "Use one of these model names (after 'models/') in the generateContent URL." });
@@ -137,6 +137,12 @@ export default async function handler(req, res) {
   }
 
   // ─── Build Gemini request body ──────────────────────────────────────────────
+  // Gemini requires at least one entry in contents
+  if (contents.length === 0) {
+    // If only a system message was provided, add a default user message
+    contents.push({ role: "user", parts: [{ text: "Hello" }] });
+  }
+
   const geminiBody = { contents };
 
   if (systemInstruction) {
@@ -154,7 +160,7 @@ export default async function handler(req, res) {
     maxOutputTokens: 2048,
   };
 
-  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
   console.log("[/api/chat] Sending request to Gemini:", {
     model: "gemini-1.5-flash",
