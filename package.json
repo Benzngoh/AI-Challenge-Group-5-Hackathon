@@ -1,0 +1,9 @@
+{
+  "name": "studysync-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "StudySync AI — Student Dashboard with Gemini integration",
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0"
+  }
+}
