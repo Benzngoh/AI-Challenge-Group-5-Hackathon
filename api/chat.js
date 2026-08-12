@@ -1,4 +1,4 @@
-// Vercel Serverless Function — Google Gemini 2.0 Flash Chat Completion
+// Vercel Serverless Function — Google Gemini 1.5 Flash Chat Completion
 // Endpoint: POST /api/chat
 // Expects JSON body: { messages: [{role, content}], tools?: [...] }
 // Returns OpenAI-compatible response shape for frontend compatibility.
@@ -27,7 +27,21 @@ export default async function handler(req, res) {
     return res.status(204).end();
   }
 
-  // Only accept POST
+  // Only accept POST (and GET for diagnostics)
+  if (req.method === "GET") {
+    // Diagnostic: list available models to debug 404 issues
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: "GEMINI_API_KEY not set" });
+    try {
+      const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+      const listData = await listRes.json();
+      const modelNames = (listData.models || []).map(m => m.name).filter(n => n.includes("flash") || n.includes("pro"));
+      return res.status(200).json({ available_models: modelNames, hint: "Use one of these model names (after 'models/') in the generateContent URL." });
+    } catch (e) {
+      return res.status(500).json({ error: "Failed to list models", message: e.message });
+    }
+  }
+
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed. Use POST." });
   }
@@ -140,10 +154,10 @@ export default async function handler(req, res) {
     maxOutputTokens: 2048,
   };
 
-  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
   console.log("[/api/chat] Sending request to Gemini:", {
-    model: "gemini-2.0-flash",
+    model: "gemini-1.5-flash",
     messageCount: contents.length,
     hasSystemInstruction: !!systemInstruction,
     toolCount: geminiTools?.[0]?.functionDeclarations?.length || 0,
@@ -181,7 +195,7 @@ export default async function handler(req, res) {
           : response.status === 429
           ? "Rate limit exceeded. The free Gemini tier has per-minute limits — wait and retry."
           : response.status === 404
-          ? "Model not found. Ensure 'gemini-2.0-flash' is available."
+          ? "Model not found. Ensure 'gemini-1.5-flash' is available."
           : "Check the gemini_error field for details.",
       });
     }
@@ -305,7 +319,7 @@ function transformGeminiToOpenAI(geminiData) {
   return {
     id: `gemini-${Date.now()}`,
     object: "chat.completion",
-    model: "gemini-2.0-flash",
+    model: "gemini-1.5-flash",
     choices: [{
       index: 0,
       message,
